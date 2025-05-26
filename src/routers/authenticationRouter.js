@@ -2,28 +2,47 @@ import express from "express";
 import User from "../model/user.js";
 const authenticationRouter = express.Router();
 import validator from "validator";
+import jwt from "jsonwebtoken";
+import userAuth from "../middleware/auth.js";
 
 authenticationRouter.post("/signup", async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      password,
-      age,
-      phoneNumber,
-      photo,
-      gender,
-    } = req.body;
+    const { firstName, lastName, email, password, phoneNumber } = req.body;
 
-    // Validate password strength
     if (!validator.isStrongPassword(password)) {
       return res.status(400).json({
         message:
           "Password must be at least 8 characters with upper, lower, number and symbol.",
       });
     }
+    if (!validator.isEmail(email.trim().toLowerCase())) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+    if (!validator.isLength(firstName, { min: 3, max: 20 })) {
+      return res.status(400).json({
+        message: "First name must be between 3 and 20 characters",
+      });
+    }
+    if (!validator.isLength(lastName, { min: 3, max: 20 })) {
+      return res.status(400).json({
+        message: "Last name must be between 3 and 20 characters",
+      });
+    }
+    if (
+      phoneNumber &&
+      !validator.isMobilePhone(phoneNumber, "any", { strictMode: false })
+    ) {
+      return res.status(400).json({ message: "Invalid phone number format" });
+    }
+    if (phoneNumber && !validator.isLength(phoneNumber, { min: 10, max: 10 })) {
+      return res
+        .status(400)
+        .json({ message: "Phone number must be exactly 10 digits" });
+    }
+    // Trim and normalize email
+    email = validator.normalizeEmail(email.trim().toLowerCase());
     // Check if user already exists
+
     const existingUser = await User.findOne({ email: email });
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
@@ -33,10 +52,7 @@ authenticationRouter.post("/signup", async (req, res) => {
       firstName,
       lastName,
       email,
-      age,
       phoneNumber,
-      photo,
-      gender,
       password,
     });
 
@@ -55,9 +71,7 @@ authenticationRouter.post("/signup", async (req, res) => {
         email: validator.normalizeEmail(newUser.email),
         firstName: newUser.firstName,
         lastName: newUser.lastName,
-        age: newUser.age,
         phoneNumber: newUser.phoneNumber,
-        photo: newUser.photo,
       },
     });
   } catch (error) {
@@ -78,15 +92,11 @@ authenticationRouter.post("/login", async (req, res) => {
     if (!user) {
       return res.status(400).json({ message: "User not found" });
     }
-    //compare password
-    console.log(password);
     const isPasswordValid = await user.comparePassword(password);
-    console.log(isPasswordValid);
     if (!isPasswordValid) {
       return res.status(400).json({ message: "Invalid Credential" });
     }
     const token = user.getJWT();
-    // Set cookie with token
     res.cookie("token", token, {
       httpOnly: true,
       maxAge: Number(process.env.COOKIES_AGE) || 24 * 60 * 60 * 1000,
@@ -97,6 +107,11 @@ authenticationRouter.post("/login", async (req, res) => {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        photo: user.photo,
+        _id: user._id,
+        fullName: user.fullName,
+        age: user.age,
       },
     });
   } catch (error) {
@@ -112,6 +127,34 @@ authenticationRouter.post("/logout", (req, res) => {
   } catch (error) {
     console.error("Error during logout:", error);
     res.status(500).json({ message: "Error during logout" });
+  }
+});
+
+authenticationRouter.get("/me", async (req, res) => {
+  try {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.userId);
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json({
+      user: {
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        photo: user.photo,
+        _id: user._id,
+        fullName: user.fullName,
+        age: user.age,
+      },
+    });
+  } catch (err) {
+    console.error("Error in /me route:", err);
+    res.status(401).json({ message: "Unauthorized" });
   }
 });
 

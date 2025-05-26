@@ -28,7 +28,7 @@ profileRouter.post("/user/profile", userAuth, async (req, res) => {
 
 profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
   try {
-    const { firstName, lastName, age, phoneNumber, photo } = req.body;
+    const { firstName, lastName, age, phoneNumber, photo, email } = req.body;
     const updateFields = {};
 
     const validatedUser = req.user;
@@ -41,10 +41,36 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
     if (age !== undefined) updateFields.age = age;
     if (photo !== undefined) updateFields.photo = photo;
 
+    if (!validator.isEmail(email.trim().toLowerCase())) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+    if (!validator.isLength(firstName, { min: 3, max: 20 })) {
+      return res.status(400).json({
+        message: "First name must be between 3 and 20 characters",
+      });
+    }
+    if (!validator.isLength(lastName, { min: 3, max: 20 })) {
+      return res.status(400).json({
+        message: "Last name must be between 3 and 20 characters",
+      });
+    }
+    if (
+      phoneNumber &&
+      !validator.isMobilePhone(phoneNumber, "any", { strictMode: false })
+    ) {
+      return res.status(400).json({ message: "Invalid phone number format" });
+    }
+    if (phoneNumber && !validator.isLength(phoneNumber, { min: 10, max: 10 })) {
+      return res
+        .status(400)
+        .json({ message: "Phone number must be exactly 10 digits" });
+    }
+
     if (phoneNumber !== undefined) {
       const isPhoneValid = validator.isMobilePhone(phoneNumber, "any", {
         strictMode: false,
       });
+      console.log(phoneNumber);
       if (!isPhoneValid) {
         return res.status(400).json({ message: "Invalid phone number format" });
       }
@@ -66,6 +92,7 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
     if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
     }
+    await updatedUser.save(); // Save the updated user to the database
     res
       .status(200)
       .json({ message: "Profile updated successfully", user: updatedUser });
