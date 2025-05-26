@@ -40,7 +40,6 @@ const userSchema = new Schema(
     },
     gender: {
       type: String,
-      required: [true, "Gender is required"],
       lowercase: true,
       trim: true,
       enum: {
@@ -68,6 +67,7 @@ const userSchema = new Schema(
     phoneNumber: {
       type: String,
       required: [true, "Phone number is required"],
+      unique: true,
       trim: true,
       validate: {
         validator: (v) =>
