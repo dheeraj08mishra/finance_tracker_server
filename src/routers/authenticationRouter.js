@@ -3,7 +3,6 @@ import User from "../model/user.js";
 const authenticationRouter = express.Router();
 import validator from "validator";
 import jwt from "jsonwebtoken";
-import userAuth from "../middleware/auth.js";
 
 authenticationRouter.post("/signup", async (req, res) => {
   try {
