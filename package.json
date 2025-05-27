@@ -9,6 +9,7 @@
   "author": "dheeraj mishra",
   "license": "ISC",
   "dependencies": {
+    "@faker-js/faker": "^9.8.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

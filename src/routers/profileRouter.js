@@ -28,7 +28,8 @@ profileRouter.post("/user/profile", userAuth, async (req, res) => {
 
 profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
   try {
-    const { firstName, lastName, age, phoneNumber, photo, email } = req.body;
+    const { firstName, lastName, age, phoneNumber, photo, email, gender } =
+      req.body;
     const updateFields = {};
 
     const validatedUser = req.user;
@@ -40,6 +41,7 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
     if (lastName !== undefined) updateFields.lastName = lastName;
     if (age !== undefined) updateFields.age = age;
     if (photo !== undefined) updateFields.photo = photo;
+    if (gender !== undefined) updateFields.gender = gender.toLowerCase();
 
     if (!validator.isEmail(email.trim().toLowerCase())) {
       return res.status(400).json({ message: "Invalid email format" });
