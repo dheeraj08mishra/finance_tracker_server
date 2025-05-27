@@ -12,3 +12,9 @@ jest.config.js
 .setup
 Seeder.js
 learning.md
+scriptFetchFirebase.js
+all_transactions.json
+all_users_with_transactions.json
+fakeusergenerate.js
+serviceAccountKey.json
+transactionGenerate.js

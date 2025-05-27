@@ -7,7 +7,7 @@ import userAuth from "../middleware/auth.js";
 
 authenticationRouter.post("/signup", async (req, res) => {
   try {
-    const { firstName, lastName, email, password, phoneNumber } = req.body;
+    const { firstName, lastName, password, phoneNumber } = req.body;
 
     if (!validator.isStrongPassword(password)) {
       return res.status(400).json({
@@ -15,6 +15,7 @@ authenticationRouter.post("/signup", async (req, res) => {
           "Password must be at least 8 characters with upper, lower, number and symbol.",
       });
     }
+    let { email } = req.body;
     if (!validator.isEmail(email.trim().toLowerCase())) {
       return res.status(400).json({ message: "Invalid email format" });
     }
@@ -39,6 +40,7 @@ authenticationRouter.post("/signup", async (req, res) => {
         .status(400)
         .json({ message: "Phone number must be exactly 10 digits" });
     }
+
     // Trim and normalize email
     email = validator.normalizeEmail(email.trim().toLowerCase());
     // Check if user already exists
@@ -111,7 +113,8 @@ authenticationRouter.post("/login", async (req, res) => {
         photo: user.photo,
         _id: user._id,
         fullName: user.fullName,
-        age: user.age,
+        gender: user.gender,
+        // age: user.age,
       },
     });
   } catch (error) {
@@ -149,7 +152,8 @@ authenticationRouter.get("/me", async (req, res) => {
         photo: user.photo,
         _id: user._id,
         fullName: user.fullName,
-        age: user.age,
+        gender: user.gender,
+        // age: user.age,
       },
     });
   } catch (err) {
