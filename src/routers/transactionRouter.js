@@ -64,16 +64,43 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
     const totalTransactions = await Transaction.countDocuments({
       userId: user._id,
     });
+    if (totalTransactions === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No transactions found",
+        data: {
+          transactions: [],
+          totalExpenseAmount: 0,
+          totalIncomeAmount: 0,
+          balance: 0,
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalTransactions: 0,
+          },
+        },
+      });
+    }
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || totalTransactions;
 
-    if (page < 1 || limit < 1) {
+    if (isNaN(limit) || limit < 1) {
       return res.status(400).json({
         success: false,
-        message: "Page and limit must be greater than 0",
+        message: "Invalid limit parameters",
       });
     }
 
+    if (
+      isNaN(page) ||
+      page < 1 ||
+      page > Math.ceil(totalTransactions / limit)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid page parameters",
+      });
+    }
     const skip = (page - 1) * limit;
     const totalPages = Math.ceil(totalTransactions / limit);
 
@@ -118,6 +145,107 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
     });
   }
 });
+
+transactionRouter.get(
+  "/user/transactions/monthly",
+  userAuth,
+  async (req, res) => {
+    try {
+      const user = req.user;
+      let { month, year } = req.query;
+      if (!month || !year) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide month and year",
+        });
+      }
+      if (!validator.isInt(month, { min: 1, max: 12 })) {
+        return res.status(400).json({
+          success: false,
+          message: "Month must be an integer between 1 and 12",
+        });
+      }
+      if (
+        !validator.isInt(year, { min: 2000, max: new Date().getFullYear() })
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Year must be a valid integer and not in the future",
+        });
+      }
+      month = Number(month) - 1;
+      year = Number(year);
+
+      const startOfMonth = new Date(year, month, 1);
+      const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+      const transactions = await Transaction.find({
+        userId: user._id,
+        date: {
+          $gte: startOfMonth,
+          $lte: endOfMonth,
+        },
+      }).sort({ date: -1 });
+
+      return res.status(200).json({
+        success: true,
+        message: "Monthly transactions retrieved successfully",
+        data: {
+          transactions,
+        },
+        totalTransactions: transactions.length,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Something went wrong",
+        error: error.message,
+      });
+    }
+  }
+);
+
+transactionRouter.get(
+  "/user/transaction/dataMonthList",
+  userAuth,
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const Transactions = await Transaction.find({ userId: user._id })
+        .sort({
+          date: -1,
+        })
+        .select({ date: 1 })
+        .distinct("date");
+
+      const monthList = Transactions.map((date) => {
+        const data = new Date(date);
+        return {
+          month: data.toLocaleString("default", { month: "long" }),
+          year: data.getFullYear(),
+        };
+      }).filter(
+        (value, index, self) =>
+          index ===
+          self.findIndex(
+            (t) => t.month === value.month && t.year === value.year
+          )
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Transaction data month list retrieved successfully",
+        data: monthList,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Something went wrong",
+        error: error.message,
+      });
+    }
+  }
+);
 
 // Update a transaction
 transactionRouter.patch(
