@@ -35,7 +35,7 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
     const newTransaction = new Transaction({
       userId: user._id,
       type,
-      amount: parseFloat(amount).toFixed(2),
+      amount: Number(parseFloat(amount).toFixed(2)),
       note,
       category,
       date,

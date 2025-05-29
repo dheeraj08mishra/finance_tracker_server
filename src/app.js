@@ -6,6 +6,7 @@ import cors from "cors";
 import authenticationRouter from "./routers/authenticationRouter.js";
 import profileRouter from "./routers/profileRouter.js";
 import transactionRouter from "./routers/transactionRouter.js";
+import filterRouter from "./routers/filterRouter.js";
 env.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,6 +24,7 @@ app.use(cookieParser()); // Middleware to parse cookies
 app.use("/", authenticationRouter); // Authentication routes
 app.use("/", profileRouter); // Profile routes
 app.use("/", transactionRouter); // Transaction routes
+app.use("/", filterRouter); // Filter routes
 connectDB()
   .then(() => {
     console.log("MongoDB connected successfully");
