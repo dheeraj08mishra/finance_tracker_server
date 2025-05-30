@@ -16,10 +16,13 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
         .json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
 
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const inputDate = new Date(date);
+    inputDate.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-    if (new Date(date) < startOfMonth || new Date(date) > now) {
+    if (inputDate < startOfMonth || inputDate > today) {
       return res.status(400).json({
         message: "Date must be between start of this month and today.",
       });
@@ -56,7 +59,6 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
     });
   }
 });
-
 // Get all transactions with pagination
 transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
   try {
@@ -263,10 +265,13 @@ transactionRouter.patch(
           .json({ message: "Invalid date format. Use YYYY-MM-DD." });
       }
 
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const inputDate = new Date(date);
+      inputDate.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-      if (new Date(date) < startOfMonth || new Date(date) > now) {
+      if (inputDate < startOfMonth || inputDate > today) {
         return res.status(400).json({
           message: "Date must be between start of this month and today.",
         });
