@@ -89,7 +89,6 @@ authenticationRouter.post("/login", async (req, res) => {
     }
 
     const user = await User.findOne({ email: email });
-    console.log(user);
     if (!user) {
       return res.status(400).json({ message: "User not found" });
     }

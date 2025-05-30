@@ -72,7 +72,6 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
       const isPhoneValid = validator.isMobilePhone(phoneNumber, "any", {
         strictMode: false,
       });
-      console.log(phoneNumber);
       if (!isPhoneValid) {
         return res.status(400).json({ message: "Invalid phone number format" });
       }
