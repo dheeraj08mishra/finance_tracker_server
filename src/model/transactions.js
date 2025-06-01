@@ -34,13 +34,35 @@ const transactionSchema = new Schema(
       type: Date,
       required: [true, "Date is required"],
       default: Date.now,
-      max: [new Date(), "Date cannot be in the future"],
-      validate: {
-        validator: function (value) {
-          return value instanceof Date && !isNaN(value.getTime());
+      validate: [
+        {
+          validator: function (value) {
+            const now = new Date();
+            const valueDate = new Date(
+              Date.UTC(
+                value.getUTCFullYear(),
+                value.getUTCMonth(),
+                value.getUTCDate()
+              )
+            );
+            const todayUTC = new Date(
+              Date.UTC(
+                now.getUTCFullYear(),
+                now.getUTCMonth(),
+                now.getUTCDate()
+              )
+            );
+            return valueDate <= todayUTC;
+          },
+          message: "Date cannot be in the future",
         },
-        message: "Invalid date format",
-      },
+        {
+          validator: function (value) {
+            return value instanceof Date && !isNaN(value.getTime());
+          },
+          message: "Invalid date format",
+        },
+      ],
     },
     note: {
       type: String,

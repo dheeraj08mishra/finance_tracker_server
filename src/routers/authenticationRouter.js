@@ -73,6 +73,8 @@ authenticationRouter.post("/signup", async (req, res) => {
         firstName: newUser.firstName,
         lastName: newUser.lastName,
         phoneNumber: newUser.phoneNumber,
+        _id: newUser._id,
+        fullName: newUser.fullName,
       },
     });
   } catch (error) {

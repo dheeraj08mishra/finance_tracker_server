@@ -16,13 +16,20 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
         .json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
 
-    const inputDate = new Date(date);
-    inputDate.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-    if (inputDate < startOfMonth || inputDate > today) {
+    // Helper to normalize any "YYYY-MM-DD" to a UTC Date at midnight
+    const getUTCDate = (dateStr) => {
+      const d = new Date(dateStr);
+      return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    };
+    const inputDate = getUTCDate(date);
+    const now = new Date();
+    const todayUTC = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    );
+    const startOfMonthUTC = new Date(
+      Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), 1)
+    );
+    if (inputDate < startOfMonthUTC || inputDate > todayUTC) {
       return res.status(400).json({
         message: "Date must be between start of this month and today.",
       });
@@ -41,7 +48,7 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
       amount: Number(parseFloat(amount).toFixed(2)),
       note,
       category,
-      date,
+      date: inputDate, // Always save as UTC Date
     });
 
     await newTransaction.save();
