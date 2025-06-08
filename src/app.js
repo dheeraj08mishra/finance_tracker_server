@@ -7,6 +7,7 @@ import authenticationRouter from "./routers/authenticationRouter.js";
 import profileRouter from "./routers/profileRouter.js";
 import transactionRouter from "./routers/transactionRouter.js";
 import filterRouter from "./routers/filterRouter.js";
+import recurringTransactionRouter from "./routers/recurringTransactionRouter.js";
 env.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,9 +26,11 @@ app.use("/", authenticationRouter); // Authentication routes
 app.use("/", profileRouter); // Profile routes
 app.use("/", transactionRouter); // Transaction routes
 app.use("/", filterRouter); // Filter routes
+app.use("/recurring", recurringTransactionRouter); // Recurring transaction routes
 connectDB()
   .then(() => {
     console.log("MongoDB connected successfully");
+    import("./utils/cron/processRecurringTransaction.js");
     app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}`);
     });

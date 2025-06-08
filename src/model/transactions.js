@@ -73,6 +73,18 @@ const transactionSchema = new Schema(
         message: "Note must be at most 200 characters long",
       },
     },
+    isRecurring: {
+      type: Boolean,
+      default: false,
+    },
+    frequency: {
+      type: String,
+      enum: {
+        values: ["minutely", "daily", "weekly", "monthly", "yearly"],
+        message: "{VALUE} is not a valid frequency",
+      },
+      default: "",
+    },
   },
   {
     timestamps: true,
