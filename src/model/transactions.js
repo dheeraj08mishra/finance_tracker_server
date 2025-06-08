@@ -80,7 +80,7 @@ const transactionSchema = new Schema(
     frequency: {
       type: String,
       enum: {
-        values: ["minutely", "daily", "weekly", "monthly", "yearly"],
+        values: ["", "minutely", "daily", "weekly", "monthly", "yearly"],
         message: "{VALUE} is not a valid frequency",
       },
       default: "",
