@@ -2,6 +2,25 @@ import express from "express";
 import Transaction from "../model/transactions.js";
 import userAuth from "../middleware/auth.js";
 import validator from "validator";
+import RecurringTransaction from "../model/recurringTransaction.js";
+import { addMinutes, addDays, addWeeks, addMonths, addYears } from "date-fns";
+
+function getNextOccurrence(frequency, baseDate) {
+  switch (frequency) {
+    case "minutely":
+      return addMinutes(baseDate, 1);
+    case "daily":
+      return addDays(baseDate, 1);
+    case "weekly":
+      return addWeeks(baseDate, 1);
+    case "monthly":
+      return addMonths(baseDate, 1);
+    case "yearly":
+      return addYears(baseDate, 1);
+    default:
+      return null;
+  }
+}
 
 const transactionRouter = express.Router();
 
@@ -9,14 +28,23 @@ const transactionRouter = express.Router();
 transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
   try {
     const user = req.user;
-    const { type, amount, note, category, date } = req.body;
+    const {
+      type,
+      amount,
+      note,
+      category,
+      date,
+      isRecurring,
+      frequency,
+      endDate,
+    } = req.body;
+
     if (!validator.isISO8601(date)) {
       return res
         .status(400)
         .json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
 
-    // Helper to normalize any "YYYY-MM-DD" to a UTC Date at midnight
     const getUTCDate = (dateStr) => {
       const d = new Date(dateStr);
       return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -42,21 +70,62 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
       });
     }
 
+    if (isRecurring && !frequency) {
+      return res.status(400).json({
+        success: false,
+        message: "Frequency is required for recurring transactions",
+      });
+    }
+    if (!isRecurring && frequency) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Frequency should not be provided for non-recurring transactions",
+      });
+    }
+
+    //  Always save the transaction
     const newTransaction = new Transaction({
       userId: user._id,
       type,
       amount: Number(parseFloat(amount).toFixed(2)),
       note,
       category,
-      date: inputDate, // Always save as UTC Date
+      date: inputDate,
+      isRecurring: isRecurring || false,
+      frequency: isRecurring ? frequency : "",
     });
-
     await newTransaction.save();
+
+    //  If recurring, also save in RecurringTransaction
+    let newRecurringTransaction = null;
+    if (isRecurring) {
+      const nextOccurrence = getNextOccurrence(frequency, inputDate);
+
+      newRecurringTransaction = new RecurringTransaction({
+        userId: user._id,
+        type,
+        amount: Number(parseFloat(amount).toFixed(2)),
+        note,
+        category,
+        frequency,
+        startDate: inputDate,
+        nextOccurrence,
+        isActive: true,
+        lastOccurrence: null,
+        parentTransactionId: newTransaction._id,
+        createdBy: user._id,
+        updatedBy: user._id,
+        ...(endDate && { endDate: getUTCDate(endDate) }),
+      });
+      await newRecurringTransaction.save();
+    }
 
     res.status(201).json({
       success: true,
       message: "Transaction added successfully",
       data: newTransaction,
+      recurring: newRecurringTransaction,
     });
   } catch (error) {
     res.status(500).json({
@@ -66,6 +135,7 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
     });
   }
 });
+
 // Get all transactions with pagination
 transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
   try {
@@ -131,6 +201,12 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
     const totalIncomeAmount = totalIncome.length ? totalIncome[0].total : 0;
     const balance = totalIncomeAmount - totalExpenseAmount;
 
+    /// recurring transactions
+    const recurringTransactions = await RecurringTransaction.find({
+      userId: user._id,
+      isActive: true,
+    });
+
     res.status(200).json({
       success: true,
       message: "Transactions retrieved successfully",
@@ -138,6 +214,7 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
         transactions,
         totalExpenseAmount,
         totalIncomeAmount,
+        recurringTransactions,
         balance,
         pagination: {
           currentPage: page,
@@ -355,10 +432,55 @@ transactionRouter.delete(
         });
       }
 
+      // If the transaction is recurring, delete the associated recurring transaction
+      // if (transaction.isRecurring) {
+      //   await RecurringTransaction.deleteOne({
+      //     parentTransactionId: transaction._id,
+      //   });
+      // }
+
       res.status(200).json({
         success: true,
         message: "Transaction deleted successfully",
         data: { transactionId: transaction._id },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Something went wrong",
+        error: error.message,
+      });
+    }
+  }
+);
+
+/// add isRecurring and frequency to the transaction schema for old transactions
+transactionRouter.patch(
+  "/user/transactions/update/recurring",
+  userAuth,
+  async (req, res) => {
+    try {
+      const user = req.user;
+      const transactionsList = await Transaction.find({ userId: user._id });
+      if (!transactionsList || transactionsList.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "No transactions found for the user",
+        });
+      }
+      console.log("transactionsList", transactionsList);
+      transactionsList.forEach(async (transaction) => {
+        if (transaction.isRecurring === undefined) {
+          transaction.isRecurring = false;
+          transaction.frequency = "";
+        }
+        await transaction.save();
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Transactions retrieved successfully",
+        data: transactionsList,
       });
     } catch (error) {
       res.status(500).json({
