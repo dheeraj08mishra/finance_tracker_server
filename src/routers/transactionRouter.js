@@ -5,6 +5,8 @@ import validator from "validator";
 import RecurringTransaction from "../model/recurringTransaction.js";
 import { addMinutes, addDays, addWeeks, addMonths, addYears } from "date-fns";
 
+import XLSX from "xlsx";
+
 function getNextOccurrence(frequency, baseDate) {
   switch (frequency) {
     case "minutely":
@@ -482,6 +484,95 @@ transactionRouter.patch(
         message: "Transactions retrieved successfully",
         data: transactionsList,
       });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Something went wrong",
+        error: error.message,
+      });
+    }
+  }
+);
+
+/// export all transactions for a user
+transactionRouter.get(
+  "/user/transactions/export/excel",
+  userAuth,
+  async (req, res) => {
+    try {
+      const user = req.user;
+      let { month, year } = req.query;
+
+      if (month && !validator.isInt(month, { min: 1, max: 12 })) {
+        return res.status(400).json({
+          success: false,
+          message: "Month must be an integer between 1 and 12",
+        });
+      }
+      if (year && !validator.isInt(year)) {
+        return res.status(400).json({
+          success: false,
+          message: "Year must be a valid integer",
+        });
+      }
+
+      month = month ? Number(month) - 1 : null;
+      year = year ? Number(year) : null;
+
+      const startOfMonth =
+        month !== null && year !== null ? new Date(year, month, 1) : null;
+      const endOfMonth =
+        month !== null && year !== null
+          ? new Date(year, month + 1, 0, 23, 59, 59, 999)
+          : null;
+
+      const transactions = await Transaction.find({
+        userId: user._id,
+        ...(startOfMonth && endOfMonth
+          ? { date: { $gte: startOfMonth, $lte: endOfMonth } }
+          : {}),
+      }).sort({ date: -1 });
+
+      if (!transactions || transactions.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "No transactions found for the user",
+        });
+      }
+
+      const exceldata = transactions.map((transaction) => {
+        return {
+          Type: transaction.type,
+          Amount: transaction.amount,
+          Note: transaction.note,
+          Category: transaction.category,
+          Date: transaction.date.toISOString().split("T")[0], // Format date as YYYY-MM-DD
+          IsRecurring: transaction.isRecurring ? "Yes" : "No",
+          Frequency: transaction.frequency || "N/A",
+        };
+      });
+
+      const workSheet = XLSX.utils.json_to_sheet(exceldata);
+      const workBook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workBook, workSheet, "Transactions");
+
+      const excelBuffer = XLSX.write(workBook, {
+        bookType: "xlsx",
+        type: "buffer",
+      });
+      const filename =
+        "transactions" +
+        (month !== null && year !== null
+          ? `_${year}-${String(month + 1).padStart(2, "0")}`
+          : "") +
+        ".xlsx";
+      res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Length", excelBuffer.length);
+      res.send(excelBuffer);
     } catch (error) {
       res.status(500).json({
         success: false,
