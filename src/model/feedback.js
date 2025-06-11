@@ -14,6 +14,12 @@ const feedbackSchema = new Schema(
       trim: true,
       maxlength: 500,
     },
+    feedbackType: {
+      type: String,
+      required: true,
+      enum: ["bug", "feature", "suggestion", "other"],
+      default: "other",
+    },
   },
   {
     timestamps: true,

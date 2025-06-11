@@ -6,13 +6,14 @@ const feedbackRouter = express.Router();
 feedbackRouter.post("/user/submitFeedback", userAuth, async (req, res) => {
   try {
     const userId = req.user._id;
-    const { feedbackText } = req.body;
+    const { feedbackText, feedbackType } = req.body;
     if (!feedbackText || feedbackText.trim().length === 0) {
       return res.status(400).send({ error: "Feedback text is required" });
     }
     const newFeedback = new Feedback({
       UserId: userId,
       feedbackText: feedbackText.trim(),
+      feedbackType: feedbackType || "other",
     });
     await newFeedback.save();
     res.status(201).send({
