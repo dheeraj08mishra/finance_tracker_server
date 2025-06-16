@@ -3,7 +3,18 @@ import Transaction from "../model/transactions.js";
 import userAuth from "../middleware/auth.js";
 import validator from "validator";
 import RecurringTransaction from "../model/recurringTransaction.js";
-import { addMinutes, addDays, addWeeks, addMonths, addYears } from "date-fns";
+import {
+  addMinutes,
+  addDays,
+  addWeeks,
+  addMonths,
+  addYears,
+  isBefore,
+  startOfMonth,
+  isAfter,
+  format,
+  parseISO,
+} from "date-fns";
 
 import XLSX from "xlsx";
 
@@ -30,7 +41,7 @@ const transactionRouter = express.Router();
 transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
   try {
     const user = req.user;
-    const {
+    let {
       type,
       amount,
       note,
@@ -41,27 +52,27 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
       endDate,
     } = req.body;
 
+    note = note.trim() || "";
+
     if (!validator.isISO8601(date)) {
       return res
         .status(400)
         .json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
-
     const getUTCDate = (dateStr) => {
-      const d = new Date(dateStr);
-      return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      return new Date(dateStr).toISOString().slice(0, 10);
     };
+
     const inputDate = getUTCDate(date);
-    const now = new Date();
-    const todayUTC = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-    );
-    const startOfMonthUTC = new Date(
-      Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), 1)
-    );
-    if (inputDate < startOfMonthUTC || inputDate > todayUTC) {
+
+    if (isBefore(parseISO(date), startOfMonth(new Date()))) {
+      toast.error("Date must be within the current month.");
+      return;
+    }
+    if (isAfter(parseISO(date), new Date())) {
       return res.status(400).json({
-        message: "Date must be between start of this month and today.",
+        success: false,
+        message: "Date cannot be in the future",
       });
     }
 
@@ -344,6 +355,7 @@ transactionRouter.patch(
       const user = req.user;
       const { id } = req.params;
       let { type, amount, note, category, date } = req.body;
+      note = note.trim() || "";
 
       if (!validator.isISO8601(date)) {
         return res
@@ -352,14 +364,16 @@ transactionRouter.patch(
       }
 
       const inputDate = new Date(date);
-      inputDate.setHours(0, 0, 0, 0);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-      if (inputDate < startOfMonth || inputDate > today) {
+      if (isBefore(inputDate, startOfMonth(new Date()))) {
         return res.status(400).json({
-          message: "Date must be between start of this month and today.",
+          success: false,
+          message: "Date must be within the current month.",
+        });
+      }
+      if (isAfter(inputDate, new Date())) {
+        return res.status(400).json({
+          success: false,
+          message: "Date cannot be in the future",
         });
       }
 
@@ -373,12 +387,6 @@ transactionRouter.patch(
         return res.status(400).json({
           success: false,
           message: "Amount must be a positive number",
-        });
-      }
-      if (new Date(date) > new Date()) {
-        return res.status(400).json({
-          success: false,
-          message: "Date cannot be in the future",
         });
       }
 
