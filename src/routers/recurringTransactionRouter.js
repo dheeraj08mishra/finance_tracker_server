@@ -57,6 +57,72 @@ recurringTransactionRouter.post(
     }
   }
 );
+// pause a recurring transaction
+
+recurringTransactionRouter.post(
+  "/pauseTransaction/:id",
+  userAuth,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { id } = req.params;
+      const recurringTransaction = await RecurringTransaction.findOneAndUpdate(
+        { _id: id, userId },
+        { isActive: false, updatedBy: userId, nextOccurrence: null },
+        { new: true }
+      );
+      if (!recurringTransaction) {
+        return res
+          .status(404)
+          .send({ error: "Recurring transaction not found" });
+      }
+      res.send({
+        message: "Recurring transaction paused successfully",
+        data: recurringTransaction,
+      });
+    } catch (error) {
+      res.status(400).send({ error: error.message });
+    }
+  }
+);
+
+recurringTransactionRouter.post(
+  "/resumeTransaction/:id",
+  userAuth,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { id } = req.params;
+      const recurringTransaction = await RecurringTransaction.findOneAndUpdate(
+        { _id: id, userId },
+        { isActive: true, updatedBy: userId },
+        { new: true }
+      );
+      if (!recurringTransaction) {
+        return res
+          .status(404)
+          .send({ error: "Recurring transaction not found" });
+      }
+      const baseDate = new Date(
+        recurringTransaction.nextOccurrence !== null
+          ? recurringTransaction.startDate
+          : recurringTransaction.lastOccurrence
+      );
+      const nextOccurrence = getNextOccurrence(
+        recurringTransaction.frequency,
+        baseDate
+      );
+      recurringTransaction.nextOccurrence = nextOccurrence;
+      await recurringTransaction.save();
+      res.send({
+        message: "Recurring transaction resumed successfully",
+        data: recurringTransaction,
+      });
+    } catch (error) {
+      res.status(400).send({ error: error.message });
+    }
+  }
+);
 
 recurringTransactionRouter.get("/transactions", userAuth, async (req, res) => {
   try {
