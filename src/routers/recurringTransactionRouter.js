@@ -103,11 +103,13 @@ recurringTransactionRouter.post(
           .status(404)
           .send({ error: "Recurring transaction not found" });
       }
+
       const baseDate = new Date(
-        recurringTransaction.nextOccurrence !== null
+        recurringTransaction.lastOccurrence === null
           ? recurringTransaction.startDate
           : recurringTransaction.lastOccurrence
       );
+
       const nextOccurrence = getNextOccurrence(
         recurringTransaction.frequency,
         baseDate
