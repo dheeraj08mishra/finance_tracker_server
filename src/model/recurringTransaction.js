@@ -51,7 +51,7 @@ const recurringTransactionSchema = new Schema(
     },
     nextOccurrence: {
       type: Date,
-      required: true,
+      required: false,
     },
     lastOccurrence: {
       type: Date,
