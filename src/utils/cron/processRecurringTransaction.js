@@ -2,6 +2,8 @@ import RecurringTransaction from "../../model/recurringTransaction.js";
 import Transaction from "../../model/transactions.js";
 import cron from "node-cron";
 import { addDays, addWeeks, addMonths, addYears } from "date-fns";
+import User from "../../model/user.js";
+import { sendRecurringTransactionEmail } from "../autoEmail/mailer.js";
 
 function getNextOccurrence(frequency, baseDate) {
   switch (frequency) {
@@ -20,40 +22,68 @@ function getNextOccurrence(frequency, baseDate) {
 
 cron.schedule("0 0 * * *", async () => {
   try {
-    const now = new Date();
+    const today = new Date();
+    const tomorrow = addDays(today, 1);
+
+    const tomorrowStart = new Date(tomorrow);
+    tomorrowStart.setHours(0, 0, 0, 0);
+
+    const tomorrowEnd = new Date(tomorrow);
+    tomorrowEnd.setHours(23, 59, 59, 999);
+
+    // Step 1: Send reminder emails for tomorrow’s transactions
+    const reminders = await RecurringTransaction.find({
+      isActive: true,
+      nextOccurrence: { $gte: tomorrowStart, $lt: tomorrowEnd },
+    });
+
+    for (const rt of reminders) {
+      const user = await User.findById(rt.userId);
+      if (user?.email) {
+        await sendRecurringTransactionEmail(
+          user.email,
+          {
+            amount: rt.amount,
+            category: rt.category,
+            note: rt.note,
+            date: rt.nextOccurrence,
+          },
+          true // isReminder = true
+        );
+      }
+    }
+
+    // Step 2: Process today's due recurring transactions
     const recurringTransactions = await RecurringTransaction.find({
       isActive: true,
-      nextOccurrence: { $lte: now },
+      nextOccurrence: { $lte: today },
       $or: [
         { endDate: { $exists: false } },
         { endDate: null },
-        { endDate: { $gte: now } },
+        { endDate: { $gte: today } },
       ],
     });
 
     for (const rt of recurringTransactions) {
-      // Only create a transaction if nextOccurrence is not beyond endDate (if set)
       if (rt.endDate && rt.nextOccurrence > rt.endDate) {
         rt.isActive = false;
         await rt.save();
         continue;
       }
 
-      // Create the transaction for the scheduled date
       const newTransaction = new Transaction({
         userId: rt.userId,
         type: rt.type,
         amount: rt.amount,
         category: rt.category,
         note: rt.note,
-        date: rt.nextOccurrence, // Use the scheduled date
+        date: rt.nextOccurrence,
         isRecurring: true,
         frequency: rt.frequency,
       });
 
       await newTransaction.save();
 
-      // Update last and next occurrence
       rt.lastOccurrence = rt.nextOccurrence;
       rt.nextOccurrence = getNextOccurrence(rt.frequency, rt.nextOccurrence);
       await rt.save();
@@ -62,4 +92,5 @@ cron.schedule("0 0 * * *", async () => {
     console.error("Error processing recurring transactions:", error);
   }
 });
+
 export default cron;

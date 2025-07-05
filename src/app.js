@@ -21,8 +21,6 @@ app.use(
     credentials: true, // Allow credentials (cookies) to be sent
   })
 );
-
-app.use(cookieParser()); // Middleware to parse cookies
 app.use("/", authenticationRouter); // Authentication routes
 app.use("/", profileRouter); // Profile routes
 app.use("/", transactionRouter); // Transaction routes
