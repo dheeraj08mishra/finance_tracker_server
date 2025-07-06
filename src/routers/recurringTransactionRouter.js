@@ -141,32 +141,18 @@ recurringTransactionRouter.get("/transactions", userAuth, async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const recurringTransactions = await RecurringTransaction.find({ userId })
-      .skip(skip)
-      .limit(limit)
-      .sort({ createdAt: -1 });
+    const parentTransactions = await Transaction.find({ userId }).select("_id");
+    const validParentIds = parentTransactions.map((txn) => txn._id);
 
-    // Gather all parentTransactionIds to batch query
-    const parentIds = recurringTransactions
-      .map((rt) => rt.parentTransactionId)
-      .filter(Boolean);
-    // Get all valid parent transactions in one query
-    const validParents = await Transaction.find({
-      _id: { $in: parentIds },
-    }).select("_id");
-    const validParentIds = new Set(
-      validParents.map((txn) => txn._id.toString())
-    );
+    const filter = { userId, parentTransactionId: { $in: validParentIds } };
 
-    // Filter recurringTransactions in-memory
-    const validRecurringTransactions = recurringTransactions.filter((rt) =>
-      validParentIds.has(rt.parentTransactionId?.toString())
-    );
-
-    const totalCount = await RecurringTransaction.countDocuments({
-      userId,
-      parentTransactionId: { $in: Array.from(validParentIds) },
-    });
+    const [totalCount, validRecurringTransactions] = await Promise.all([
+      RecurringTransaction.countDocuments(filter),
+      RecurringTransaction.find(filter)
+        .skip(skip)
+        .limit(limit)
+        .sort({ nextOccurrence: 1 }),
+    ]);
 
     const totalPages = Math.ceil(totalCount / limit);
     const hasNextPage = page < totalPages;
