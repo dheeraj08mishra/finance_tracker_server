@@ -7,7 +7,7 @@ import Transaction from "../model/transactions.js";
 
 filterRouter.get("/filter", userAuth, async (req, res) => {
   try {
-    const { note, category, fromDate, toDate, sort } = req.query;
+    const { note, category, fromDate, toDate, sort, tags } = req.query;
 
     const cleanedNote = note?.trim();
     if (cleanedNote && cleanedNote.length > 100) {

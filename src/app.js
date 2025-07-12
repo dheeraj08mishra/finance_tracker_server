@@ -9,6 +9,7 @@ import transactionRouter from "./routers/transactionRouter.js";
 import filterRouter from "./routers/filterRouter.js";
 import recurringTransactionRouter from "./routers/recurringTransactionRouter.js";
 import feedbackRouter from "./routers/feedbackRouter.js";
+import tagRouter from "./routers/tagRoutes.js";
 env.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +28,7 @@ app.use("/", transactionRouter); // Transaction routes
 app.use("/", filterRouter); // Filter routes
 app.use("/recurring", recurringTransactionRouter); // Recurring transaction routes
 app.use("/", feedbackRouter); // Feedback routes
+app.use("/", tagRouter); // Tag extraction routes
 
 connectDB()
   .then(() => {
