@@ -10,11 +10,11 @@ export const sendRecurringTransactionEmail = async (
   const formattedDate = new Date(date).toLocaleDateString();
 
   const subject = isReminder
-    ? "📅 Reminder: A Recurring Transaction Will Be Added Tomorrow"
+    ? "Reminder: A Recurring Transaction Will Be Added Tomorrow"
     : "📩 BudgetWise: A Recurring Transaction Was Added";
 
   const htmlBody = isReminder
-    ? `<h2>📅 Reminder: A Recurring Transaction is Scheduled for Tomorrow</h2>
+    ? `<h2>Reminder: A Recurring Transaction is Scheduled for Tomorrow</h2>
        <p><strong>Amount:</strong> ₹${amount}</p>
        <p><strong>Category:</strong> ${category}</p>
        <p><strong>Note:</strong> ${note}</p>
