@@ -4,6 +4,7 @@ import cron from "node-cron";
 import { addDays, addWeeks, addMonths, addYears } from "date-fns";
 import User from "../../model/user.js";
 import { sendRecurringTransactionEmail } from "../autoEmail/mailer.js";
+import { extractTags } from "../tags/extractTags.js";
 
 function getNextOccurrence(frequency, baseDate) {
   switch (frequency) {
@@ -70,6 +71,19 @@ cron.schedule("0 0 * * *", async () => {
         await rt.save();
         continue;
       }
+      let tags = [];
+
+      if (!rt.tags.length && rt.note && rt.note.trim().length > 0) {
+        try {
+          tags = await extractTags(rt.note);
+          rt.tags = tags;
+          await rt.save();
+        } catch (error) {
+          console.error("Error extracting tags:", error);
+        }
+      } else {
+        tags = rt.tags;
+      }
 
       const newTransaction = new Transaction({
         userId: rt.userId,
@@ -80,6 +94,10 @@ cron.schedule("0 0 * * *", async () => {
         date: rt.nextOccurrence,
         isRecurring: true,
         frequency: rt.frequency,
+        tags: tags,
+        createdBy: rt.userId,
+        updatedBy: rt.userId,
+        recurringTransactionId: rt._id,
       });
 
       await newTransaction.save();

@@ -78,6 +78,15 @@ const recurringTransactionSchema = new Schema(
       ref: "Transaction",
       default: null,
     },
+    tags: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (v) =>
+          v.every((tag) => validator.isLength(tag, { max: 20 })),
+        message: "Each tag must be at most 20 characters long",
+      },
+    },
   },
   {
     timestamps: true,
