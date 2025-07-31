@@ -48,6 +48,10 @@ tagRouter.post("/extractTags/UpdateAll/batch", userAuth, async (req, res) => {
       try {
         if (!txn.note || txn.note.trim().length < 5) return null;
 
+        if (txn.tags && txn.tags.length > 0) {
+          return { id: txn._id, status: "skipped" };
+        }
+
         const tags = await extractTags(txn.note);
         txn.tags = tags;
         txn.updatedBy = userId;

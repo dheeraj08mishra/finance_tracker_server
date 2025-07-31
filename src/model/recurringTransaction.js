@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 const { Schema } = mongoose;
+import validator from "validator";
 
 const recurringTransactionSchema = new Schema(
   {
