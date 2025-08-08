@@ -9,11 +9,20 @@ const transactionSchema = new Schema(
       ref: "User",
       required: true,
     },
+    goalId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Goal",
+      default: null,
+    },
+    isGoalTransaction: {
+      type: Boolean,
+      default: false,
+    },
     type: {
       type: String,
       required: [true, "Type of transaction is required"],
       enum: {
-        values: ["income", "expense"],
+        values: ["income", "expense", "credit", "transfer"],
         message: "{VALUE} is not a valid type of transaction",
       },
     },
@@ -26,7 +35,7 @@ const transactionSchema = new Schema(
       type: String,
       required: [true, "Category is required"],
       enum: {
-        values: ["need", "want", "investment", "other"],
+        values: ["need", "want", "investment", "other", "Goal Excess", "goal"],
         message: "{VALUE} is not a valid category",
       },
     },

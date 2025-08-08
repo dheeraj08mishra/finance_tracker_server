@@ -3,6 +3,7 @@ import Transaction from "../model/transactions.js";
 import userAuth from "../middleware/auth.js";
 import validator from "validator";
 import RecurringTransaction from "../model/recurringTransaction.js";
+import Goal from "../model/goal.js";
 import {
   addMinutes,
   addDays,
@@ -347,16 +348,25 @@ transactionRouter.get(
 );
 
 // Update a transaction
+// patched route
 transactionRouter.patch(
   "/user/update/transaction/:id",
   userAuth,
   async (req, res) => {
+    let session;
     try {
       const user = req.user;
       const { id } = req.params;
       let { type, amount, note, category, date } = req.body;
-      note = note.trim() || "";
+      note = (note || "").trim();
+      if (!type || amount === undefined || !category || !date) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide type, amount, category and date",
+        });
+      }
 
+      // Validate date format
       if (!validator.isISO8601(date)) {
         return res
           .status(400)
@@ -377,34 +387,57 @@ transactionRouter.patch(
         });
       }
 
-      if (!type || !amount || !category || !date) {
-        return res.status(400).json({
-          success: false,
-          message: "Please provide data in all fields",
-        });
-      }
-      if (isNaN(amount) || parseFloat(amount) <= 0) {
+      // Numeric amount parsing & validation
+      const parsed = parseFloat(amount);
+      if (isNaN(parsed) || parsed <= 0) {
         return res.status(400).json({
           success: false,
           message: "Amount must be a positive number",
         });
       }
+      const amountNum = Number(parsed.toFixed(2));
+      session = await Transaction.startSession();
+      session.startTransaction();
 
-      amount = parseFloat(amount).toFixed(2);
-
-      const transaction = await Transaction.findOneAndUpdate(
-        { _id: id, userId: user._id },
-        { type, amount, note, category, date },
-        { new: true }
-      );
+      const transaction = await Transaction.findOne({
+        _id: id,
+        userId: user._id,
+      }).session(session);
 
       if (!transaction) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(404).json({
           success: false,
           message: "Transaction not found",
         });
       }
-      await transaction.save();
+
+      if (transaction.isGoalTransaction && transaction.goalId) {
+        const goal = await Goal.findOne({
+          _id: transaction.goalId,
+          userId: user._id,
+        }).session(session);
+
+        if (goal) {
+          const oldAmount = Number(transaction.amount || 0);
+          const delta = amountNum - oldAmount;
+          goal.currentAmount = Math.max(0, goal.currentAmount + delta);
+          goal.checkGoalStatus();
+          await goal.save({ session });
+        }
+      }
+
+      transaction.type = type;
+      transaction.amount = amountNum;
+      transaction.note = note;
+      transaction.category = category;
+      transaction.date = inputDate;
+
+      await transaction.save({ session });
+
+      await session.commitTransaction();
+      session.endSession();
 
       res.status(200).json({
         success: true,
@@ -412,6 +445,15 @@ transactionRouter.patch(
         data: transaction,
       });
     } catch (error) {
+      if (session) {
+        try {
+          await session.abortTransaction();
+          session.endSession();
+        } catch (e) {
+          console.error("Error aborting session:", e);
+        }
+      }
+      console.error("Update transaction error:", error);
       res.status(500).json({
         success: false,
         message: "Something went wrong",
@@ -426,15 +468,16 @@ transactionRouter.delete(
   "/user/transaction/delete/:id",
   userAuth,
   async (req, res) => {
+    const session = await Transaction.startSession();
+    session.startTransaction();
     try {
       const user = req.user;
       const { id } = req.params;
 
-      const transaction = await Transaction.findOneAndDelete({
+      const transaction = await Transaction.findOne({
         _id: id,
         userId: user._id,
       });
-
       if (!transaction) {
         return res.status(404).json({
           success: false,
@@ -442,12 +485,27 @@ transactionRouter.delete(
         });
       }
 
-      // If the transaction is recurring, delete the associated recurring transaction
-      // if (transaction.isRecurring) {
-      //   await RecurringTransaction.deleteOne({
-      //     parentTransactionId: transaction._id,
-      //   });
-      // }
+      if (transaction.isGoalTransaction && transaction.goalId) {
+        const goal = await Goal.findOne({
+          _id: transaction.goalId,
+          userId: user._id,
+        }).session(session);
+        if (goal) {
+          goal.currentAmount -= transaction.amount;
+          if (goal.currentAmount < 0) {
+            goal.currentAmount = 0;
+          }
+          goal.checkGoalStatus();
+          await goal.save({ session });
+        }
+      }
+
+      await Transaction.deleteOne({ _id: id, userId: user._id }).session(
+        session
+      );
+
+      await session.commitTransaction();
+      session.endSession();
 
       res.status(200).json({
         success: true,
@@ -455,6 +513,8 @@ transactionRouter.delete(
         data: { transactionId: transaction._id },
       });
     } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
       res.status(500).json({
         success: false,
         message: "Something went wrong",

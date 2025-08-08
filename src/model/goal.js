@@ -58,6 +58,9 @@ goalSchema.methods.checkGoalStatus = function () {
   if (this.currentAmount >= this.targetAmount) {
     this.isCompleted = true;
     this.completedAt = new Date();
+  } else {
+    this.isCompleted = false;
+    this.completedAt = null;
   }
 };
 
