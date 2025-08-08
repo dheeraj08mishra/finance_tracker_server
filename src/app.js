@@ -11,6 +11,7 @@ import recurringTransactionRouter from "./routers/recurringTransactionRouter.js"
 import feedbackRouter from "./routers/feedbackRouter.js";
 import tagRouter from "./routers/tagRoutes.js";
 import goalRouter from "./routers/goalRouter.js";
+import manualUpdateRecurringRouter from "./routers/manualUpdateRecurring.js";
 env.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +32,7 @@ app.use("/recurring", recurringTransactionRouter); // Recurring transaction rout
 app.use("/", feedbackRouter); // Feedback routes
 app.use("/", tagRouter); // Tag extraction routes
 app.use("/", goalRouter); // Goal management routes
+app.use("/", manualUpdateRecurringRouter); // Manual update for recurring transactions
 
 connectDB()
   .then(() => {

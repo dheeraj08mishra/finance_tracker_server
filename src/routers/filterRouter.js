@@ -88,6 +88,9 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
     const lowercaseCategory = category?.toLowerCase();
     const cleanedFromDate = fromDate ? new Date(fromDate) : null;
     const cleanedToDate = toDate ? new Date(toDate) : null;
+    if (cleanedToDate) {
+      cleanedToDate.setHours(23, 59, 59, 999); // Set to end of the day
+    }
 
     const filter = { userId: req.user._id };
     if (cleanedNote) {
