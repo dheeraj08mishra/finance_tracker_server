@@ -108,7 +108,8 @@ const transactionSchema = new Schema(
     timestamps: true,
   }
 );
-transactionSchema.index({ userId: 1, date: -1, amount: 1 });
+
+transactionSchema.index({ userId: 1, amount: 1, category: 1, date: -1 });
 
 const Transaction = mongoose.model("Transaction", transactionSchema);
 
