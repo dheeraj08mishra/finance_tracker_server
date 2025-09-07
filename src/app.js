@@ -12,6 +12,7 @@ import feedbackRouter from "./routers/feedbackRouter.js";
 import tagRouter from "./routers/tagRoutes.js";
 import goalRouter from "./routers/goalRouter.js";
 import manualUpdateRecurringRouter from "./routers/manualUpdateRecurring.js";
+import insightRouter from "./routers/insight.js";
 env.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +34,7 @@ app.use("/", feedbackRouter); // Feedback routes
 app.use("/", tagRouter); // Tag extraction routes
 app.use("/", goalRouter); // Goal management routes
 app.use("/", manualUpdateRecurringRouter); // Manual update for recurring transactions
+app.use("/insights", insightRouter); // Insight routes
 
 connectDB()
   .then(() => {
