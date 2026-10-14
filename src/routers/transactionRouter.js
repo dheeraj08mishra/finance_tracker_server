@@ -1,4 +1,5 @@
 import express from "express";
+import { publicError } from "../utils/errors.js";
 import Transaction from "../model/transactions.js";
 import userAuth from "../middleware/auth.js";
 import validator from "validator";
@@ -17,7 +18,7 @@ import {
   parseISO,
 } from "date-fns";
 
-import XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 function getNextOccurrence(frequency, baseDate) {
   switch (frequency) {
@@ -145,7 +146,7 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to add transaction",
-      error: error.message,
+      error: publicError(error),
     });
   }
 });
@@ -241,7 +242,7 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Something went wrong",
-      error: error.message,
+      error: publicError(error),
     });
   }
 });
@@ -299,7 +300,7 @@ transactionRouter.get(
       res.status(500).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -341,7 +342,7 @@ transactionRouter.get(
       res.status(500).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -457,7 +458,7 @@ transactionRouter.patch(
       res.status(500).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -518,7 +519,7 @@ transactionRouter.delete(
       res.status(500).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -556,7 +557,7 @@ transactionRouter.patch(
       res.status(500).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -620,14 +621,17 @@ transactionRouter.get(
         };
       });
 
-      const workSheet = XLSX.utils.json_to_sheet(exceldata);
-      const workBook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workBook, workSheet, "Transactions");
+      const workBook = new ExcelJS.Workbook();
+      const workSheet = workBook.addWorksheet("Transactions");
+      workSheet.columns = Object.keys(exceldata[0]).map((key) => ({
+        header: key,
+        key,
+        width: key === "Note" ? 40 : 14,
+      }));
+      workSheet.addRows(exceldata); // plain values: notes never become formulas
+      workSheet.getRow(1).font = { bold: true };
 
-      const excelBuffer = XLSX.write(workBook, {
-        bookType: "xlsx",
-        type: "buffer",
-      });
+      const excelBuffer = Buffer.from(await workBook.xlsx.writeBuffer());
       const filename =
         "transactions" +
         (month !== null && year !== null
@@ -645,7 +649,7 @@ transactionRouter.get(
       res.status(500).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -687,7 +691,7 @@ transactionRouter.get(
       res.status(500).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }

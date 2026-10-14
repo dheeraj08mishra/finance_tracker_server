@@ -21,7 +21,7 @@ const userAuth = async (req, res, next) => {
   } catch (error) {
     return res
       .status(401)
-      .json({ message: "Unauthorized", details: error.message });
+      .json({ message: "Unauthorized" });
   }
 };
 export default userAuth;

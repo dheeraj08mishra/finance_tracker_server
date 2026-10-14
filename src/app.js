@@ -13,18 +13,29 @@ import tagRouter from "./routers/tagRoutes.js";
 import goalRouter from "./routers/goalRouter.js";
 import manualUpdateRecurringRouter from "./routers/manualUpdateRecurring.js";
 import insightRouter from "./routers/insight.js";
+import helmet from "helmet";
+import { apiLimiter, authLimiter, aiLimiter } from "./utils/security.js";
 env.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json()); // Middleware to parse JSON request bodies
+// Behind nginx, trust one proxy hop so rate limits see the real client IP
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", Number(process.env.TRUST_PROXY));
+}
+app.disable("x-powered-by");
+app.use(helmet()); // Security headers
+app.use(apiLimiter);
+app.use(express.json({ limit: "20kb" })); // Middleware to parse JSON request bodies
 app.use(cookieParser()); // Middleware to parse cookies
 app.use(
   cors({
-    origin: "http://localhost:1234", // Replace with your frontend URL
+    origin: process.env.CLIENT_ORIGIN || "http://localhost:1234", // frontend URL
     credentials: true, // Allow credentials (cookies) to be sent
   })
 );
+app.use(["/login", "/signup"], authLimiter);
+app.use("/extractTags", aiLimiter);
 app.use("/", authenticationRouter); // Authentication routes
 app.use("/", profileRouter); // Profile routes
 app.use("/", transactionRouter); // Transaction routes

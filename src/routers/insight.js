@@ -1,4 +1,5 @@
 import express from "express";
+import { publicError } from "../utils/errors.js";
 import Transaction from "../model/transactions.js";
 import userAuth from "../middleware/auth.js";
 
@@ -68,7 +69,7 @@ insightRouter.get("/monthlySummary", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
@@ -132,7 +133,7 @@ insightRouter.post("/monthlySummary", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
@@ -304,7 +305,7 @@ insightRouter.post("/anomalyDetection", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 

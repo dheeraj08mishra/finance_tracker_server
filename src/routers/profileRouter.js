@@ -1,4 +1,5 @@
 import express from "express";
+import { publicError } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import User from "../model/user.js";
 import validator from "validator";
@@ -22,7 +23,7 @@ profileRouter.post("/user/profile", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
@@ -100,7 +101,7 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 

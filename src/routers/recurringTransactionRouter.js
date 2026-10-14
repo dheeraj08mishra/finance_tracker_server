@@ -1,4 +1,5 @@
 import express from "express";
+import { publicError } from "../utils/errors.js";
 import RecurringTransaction from "../model/recurringTransaction.js";
 import userAuth from "../middleware/auth.js";
 import { addDays, addWeeks, addMonths, addYears } from "date-fns";
@@ -54,7 +55,7 @@ recurringTransactionRouter.post(
         data: newRecurringTransaction,
       });
     } catch (error) {
-      res.status(400).send({ error: error.message });
+      res.status(400).send({ error: publicError(error) });
     }
   }
 );
@@ -89,7 +90,7 @@ recurringTransactionRouter.post(
         data: recurringTransaction,
       });
     } catch (error) {
-      res.status(400).send({ error: error.message });
+      res.status(400).send({ error: publicError(error) });
     }
   }
 );
@@ -129,7 +130,7 @@ recurringTransactionRouter.post(
         data: recurringTransaction,
       });
     } catch (error) {
-      res.status(400).send({ error: error.message });
+      res.status(400).send({ error: publicError(error) });
     }
   }
 );
@@ -174,7 +175,7 @@ recurringTransactionRouter.get("/transactions", userAuth, async (req, res) => {
       pagination,
     });
   } catch (error) {
-    res.status(400).send({ error: error.message });
+    res.status(400).send({ error: publicError(error) });
   }
 });
 

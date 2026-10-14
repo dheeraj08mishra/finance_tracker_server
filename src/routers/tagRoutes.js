@@ -58,7 +58,8 @@ tagRouter.post("/extractTags/UpdateAll/batch", userAuth, async (req, res) => {
         await txn.save();
         return { id: txn._id, status: "success" };
       } catch (err) {
-        return { id: txn._id, status: "failed", error: err.message };
+        console.error(`Tag extraction failed for txn=${txn._id}:`, err);
+        return { id: txn._id, status: "failed", error: "Tag extraction failed" };
       }
     });
 

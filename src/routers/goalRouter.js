@@ -1,4 +1,5 @@
 import express from "express";
+import { publicError } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import Transaction from "../model/transactions.js";
 import Goal from "../model/goal.js";
@@ -50,7 +51,7 @@ goalRouter.post("/goal/create", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
@@ -67,7 +68,7 @@ goalRouter.get("/goal/list", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
@@ -123,7 +124,7 @@ goalRouter.patch("/goal/update/:id", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
@@ -141,7 +142,7 @@ goalRouter.delete("/goal/delete/:id", userAuth, async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ error: "Something went wrong", details: error.message });
+      .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 

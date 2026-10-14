@@ -32,7 +32,8 @@ function getMissedOccurrences(frequency, start, today, endDate) {
   return dates;
 }
 
-export async function manualRecurringSync() {
+// userId limits the sync to one user; omit it only from trusted scripts
+export async function manualRecurringSync(userId) {
   console.log(`[MANUAL SYNC] Job started at ${new Date().toISOString()}`);
   try {
     const now = new Date();
@@ -41,6 +42,7 @@ export async function manualRecurringSync() {
     todayEnd.setHours(23, 59, 59, 999);
 
     const recurrings = await RecurringTransaction.find({
+      ...(userId && { userId }),
       isActive: true,
       nextOccurrence: { $lte: todayEnd },
       $or: [
