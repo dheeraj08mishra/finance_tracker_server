@@ -4,6 +4,11 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 const { Schema } = mongoose;
 
+// Old accounts were given this placeholder, which no longer exists.
+// Treat it (and empty values) as "no photo".
+const DEAD_DEFAULT_PHOTO = "https://s3.amazonaws.com/37assets/svn/765-default-avatar.png";
+const normalizePhoto = (v) => (!v || v === DEAD_DEFAULT_PHOTO ? null : v);
+
 const userSchema = new Schema(
   {
     firstName: {
@@ -91,11 +96,13 @@ const userSchema = new Schema(
       default: [],
       select: false,
     },
+    // No photo by default: the app shows the user's initials
     photo: {
       type: String,
-      default: "https://s3.amazonaws.com/37assets/svn/765-default-avatar.png",
+      default: null,
+      get: normalizePhoto,
       validate: {
-        validator: validator.isURL,
+        validator: (v) => !v || validator.isURL(v),
         message: (props) => `${props.value} is not a valid URL!`,
       },
     },
@@ -107,6 +114,7 @@ const userSchema = new Schema(
       transform: function (doc, ret) {
         delete ret.password;
         delete ret.passwordHistory;
+        ret.photo = normalizePhoto(ret.photo);
         delete ret.passwordChangedAt;
         delete ret.tokenVersion;
         delete ret.__v;

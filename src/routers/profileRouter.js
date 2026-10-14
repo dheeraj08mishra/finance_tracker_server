@@ -35,8 +35,9 @@ profileRouter.post("/user/profile", userAuth, async (req, res) => {
 profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
   try {
     const { firstName, lastName, email, gender } = req.body;
-    // The form sends every field; an empty photo/phone means "unchanged"
-    const photo = req.body.photo === "" ? undefined : req.body.photo;
+    // The form sends every field. Empty photo = remove it (initials are shown);
+    // empty phone = unchanged (a phone number is required)
+    const photo = req.body.photo;
     const phoneNumber =
       req.body.phoneNumber === "" ? undefined : req.body.phoneNumber;
     const updateFields = {};
@@ -61,7 +62,9 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
       if (typeof gender !== "string") return bad("Invalid gender");
       updateFields.gender = gender.toLowerCase();
     }
-    if (photo !== undefined) {
+    if (photo === "" || photo === null) {
+      updateFields.photo = null;
+    } else if (photo !== undefined) {
       // https image links only (no javascript:, data: or plain http)
       if (
         typeof photo !== "string" ||
