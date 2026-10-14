@@ -16,6 +16,13 @@ const userAuth = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ message: "Unauthorized: User not found" });
     }
+    // A password change bumps tokenVersion, signing out every older session
+    // (tokens from before this feature carry no version and count as 0)
+    if ((decoded.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+      return res
+        .status(401)
+        .json({ message: "Your password was changed. Please sign in again." });
+    }
     req.user = user; // Attach user to request object
     next();
   } catch (error) {

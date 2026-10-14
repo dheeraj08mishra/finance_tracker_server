@@ -3,6 +3,11 @@ import { publicError, errorStatus } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import User from "../model/user.js";
 import validator from "validator";
+import { setAuthCookie } from "../utils/security.js";
+import bcrypt from "bcrypt";
+
+// How many recent passwords (including the current one) can't be reused
+const PASSWORD_HISTORY = 3;
 const profileRouter = express.Router();
 
 profileRouter.post("/user/profile", userAuth, async (req, res) => {
@@ -96,6 +101,59 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
     res
       .status(200)
       .json({ message: "Profile updated successfully", user: updatedUser });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({ message, error: message });
+  }
+});
+
+// Change password. Signs out every other session (see auth middleware) and
+// gives this device a fresh cookie so it stays signed in.
+profileRouter.patch("/user/password", userAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const bad = (message, status = 400) =>
+      res.status(status).json({ message, error: message });
+
+    if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
+      return bad("Current and new password are required.");
+    }
+    if (!validator.isStrongPassword(newPassword)) {
+      return bad(
+        "New password must be at least 8 characters with upper, lower, number and symbol."
+      );
+    }
+    // The schema trims passwords, which would silently change this one
+    if (newPassword !== newPassword.trim()) {
+      return bad("New password can't start or end with a space.");
+    }
+
+    // includes the hash; history is select:false so ask for it
+    const user = await User.findById(req.user._id).select("+passwordHistory");
+    // 403, not 401: the session is fine, the typed password isn't (a 401
+    // would make the app treat this as an expired session and sign out)
+    if (!(await user.comparePassword(currentPassword))) {
+      return bad("Current password is incorrect.", 403);
+    }
+    // No reuse of the last PASSWORD_HISTORY passwords (current one included)
+    const recentHashes = [user.password, ...(user.passwordHistory || [])].slice(0, PASSWORD_HISTORY);
+    for (const hash of recentHashes) {
+      if (await bcrypt.compare(newPassword, hash)) {
+        return bad(`You can't reuse any of your last ${PASSWORD_HISTORY} passwords.`);
+      }
+    }
+
+    // Keep the outgoing hash so it counts as "recent" from now on
+    user.passwordHistory = recentHashes.slice(0, PASSWORD_HISTORY - 1);
+    user.password = newPassword; // hashed by the pre-save hook
+    user.passwordChangedAt = new Date();
+    user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidates all old tokens
+    await user.save();
+
+    setAuthCookie(res, user.getJWT());
+    res.status(200).json({
+      message: "Password changed. Other devices have been signed out.",
+    });
   } catch (error) {
     const message = publicError(error);
     res.status(errorStatus(error)).json({ message, error: message });

@@ -74,6 +74,23 @@ const userSchema = new Schema(
         message: (props) => `${props.value} is not a valid phone number!`,
       },
     },
+    // Bumped on password change; tokens carrying an older version are
+    // rejected (see auth middleware), which signs out every other session
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+    },
+    // Hashes of recent previous passwords (newest first), so they can't be
+    // reused. Never sent to clients.
+    passwordHistory: {
+      type: [String],
+      default: [],
+      select: false,
+    },
     photo: {
       type: String,
       default: "https://s3.amazonaws.com/37assets/svn/765-default-avatar.png",
@@ -89,6 +106,9 @@ const userSchema = new Schema(
       virtuals: true,
       transform: function (doc, ret) {
         delete ret.password;
+        delete ret.passwordHistory;
+        delete ret.passwordChangedAt;
+        delete ret.tokenVersion;
         delete ret.__v;
         return ret;
       },
@@ -106,7 +126,7 @@ userSchema.pre("save", async function (next) {
 
 userSchema.methods.getJWT = function () {
   if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET not set");
-  return jwt.sign({ userId: this._id }, process.env.JWT_SECRET, {
+  return jwt.sign({ userId: this._id, tv: this.tokenVersion || 0 }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRATION || "1d",
   });
 };

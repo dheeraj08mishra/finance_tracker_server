@@ -34,9 +34,10 @@ const limiter = (windowMinutes, limit, message) =>
 export const apiLimiter = limiter(15, 300, "Too many requests, slow down.");
 
 // Login/signup: slows down password guessing
+// AUTH_RATE_LIMIT overrides the attempt count (e.g. higher for local tests)
 export const authLimiter = limiter(
   15,
-  10,
+  Number(process.env.AUTH_RATE_LIMIT) || 10,
   "Too many login attempts. Try again in 15 minutes."
 );
 

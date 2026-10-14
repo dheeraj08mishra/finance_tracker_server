@@ -35,7 +35,8 @@ app.use(
     credentials: true, // Allow credentials (cookies) to be sent
   })
 );
-app.use(["/login", "/signup"], authLimiter);
+// Password guessing: login, signup and change-password share the strict limit
+app.use(["/login", "/signup", "/user/password"], authLimiter);
 app.use("/extractTags", aiLimiter);
 app.use("/", authenticationRouter); // Authentication routes
 app.use("/", profileRouter); // Profile routes
