@@ -1,6 +1,6 @@
 import express from "express";
 const manualUpdateRecurringRouter = express.Router();
-import { manualRecurringSync } from "../utils/cron/manualRecurringTransaction.js";
+import { processDueRecurring } from "../utils/cron/recurringEngine.js";
 import RecurringTransaction from "../model/recurringTransaction.js";
 import userAuth from "../middleware/auth.js";
 
@@ -8,8 +8,14 @@ import userAuth from "../middleware/auth.js";
 manualUpdateRecurringRouter.post("/sync", userAuth, async (req, res) => {
   try {
     console.log(`Triggered manual sync for user=${req.user._id}`);
-    await manualRecurringSync(req.user._id);
-    res.status(200).json({ message: "Manual sync completed successfully." });
+    const { created } = await processDueRecurring({ userId: req.user._id });
+    res.status(200).json({
+      message:
+        created > 0
+          ? `Sync complete: ${created} transaction(s) added.`
+          : "Sync complete: everything is up to date.",
+      created,
+    });
   } catch (error) {
     console.error(" Error during manual sync:", error);
     res.status(500).json({ message: "Error during manual sync" });

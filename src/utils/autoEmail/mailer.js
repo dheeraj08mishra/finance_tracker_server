@@ -6,7 +6,14 @@ export const sendRecurringTransactionEmail = async (
   txnDetails,
   isReminder = false
 ) => {
-  const { amount, category, note, date } = txnDetails;
+  // Notes are user input: escape before putting them into HTML
+  const escapeHtml = (s) =>
+    String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+    );
+  const { amount, category, date } = txnDetails;
+  const note = escapeHtml(txnDetails.note);
+  const rawNote = txnDetails.note ?? "";
   const formattedDate = new Date(date).toLocaleDateString();
 
   const subject = isReminder
@@ -33,14 +40,14 @@ export const sendRecurringTransactionEmail = async (
     ? `Reminder: A recurring transaction is scheduled for tomorrow.
 Amount: ₹${amount}
 Category: ${category}
-Note: ${note}
+Note: ${rawNote}
 Date: ${formattedDate}
 
 — BudgetWise`
     : `New Recurring Transaction Added 
 Amount: ₹${amount}
 Category: ${category}
-Note: ${note}
+Note: ${rawNote}
 Date: ${formattedDate}
 
 — BudgetWise`;

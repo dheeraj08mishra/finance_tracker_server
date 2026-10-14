@@ -1,5 +1,5 @@
 import express from "express";
-import { publicError } from "../utils/errors.js";
+import { publicError, errorStatus } from "../utils/errors.js";
 import Feedback from "../model/feedback.js";
 import userAuth from "../middleware/auth.js";
 
@@ -22,7 +22,7 @@ feedbackRouter.post("/user/submitFeedback", userAuth, async (req, res) => {
       data: newFeedback,
     });
   } catch (error) {
-    res.status(500).send({ error: publicError(error) });
+    res.status(errorStatus(error)).send({ error: publicError(error) });
   }
 });
 
@@ -40,7 +40,7 @@ feedbackRouter.get("/user/feedbacks", userAuth, async (req, res) => {
       data: feedbacks,
     });
   } catch (error) {
-    res.status(500).send({ error: publicError(error) });
+    res.status(errorStatus(error)).send({ error: publicError(error) });
   }
 });
 

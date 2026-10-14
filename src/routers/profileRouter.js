@@ -1,5 +1,5 @@
 import express from "express";
-import { publicError } from "../utils/errors.js";
+import { publicError, errorStatus } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import User from "../model/user.js";
 import validator from "validator";
@@ -22,66 +22,65 @@ profileRouter.post("/user/profile", userAuth, async (req, res) => {
       .json({ message: `${userFind.fullName} profile`, user: userFind });
   } catch (error) {
     res
-      .status(500)
+      .status(errorStatus(error))
       .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
 profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
   try {
-    const { firstName, lastName, age, phoneNumber, photo, email, gender } =
-      req.body;
+    const { firstName, lastName, email, gender } = req.body;
+    // The form sends every field; an empty photo/phone means "unchanged"
+    const photo = req.body.photo === "" ? undefined : req.body.photo;
+    const phoneNumber =
+      req.body.phoneNumber === "" ? undefined : req.body.phoneNumber;
     const updateFields = {};
+    const bad = (message) => res.status(400).json({ message, error: message });
 
-    const validatedUser = req.user;
-    if (validatedUser.email !== email) {
+    // Email can't be changed here; if sent it must be the user's own
+    if (email !== undefined && email !== req.user.email) {
       return res.status(403).json({ message: "Forbidden: Access denied" });
     }
 
-    if (firstName !== undefined) updateFields.firstName = firstName;
-    if (lastName !== undefined) updateFields.lastName = lastName;
-    if (age !== undefined) updateFields.age = age;
-    if (photo !== undefined) updateFields.photo = photo;
-    if (gender !== undefined) updateFields.gender = gender.toLowerCase();
+    // Every field is optional: validate only what was sent
+    for (const [field, value] of [["First name", firstName], ["Last name", lastName]]) {
+      if (value === undefined) continue;
+      if (typeof value !== "string" || !validator.isLength(value.trim(), { min: 3, max: 20 })) {
+        return bad(`${field} must be between 3 and 20 characters`);
+      }
+    }
+    if (firstName !== undefined) updateFields.firstName = firstName.trim();
+    if (lastName !== undefined) updateFields.lastName = lastName.trim();
 
-    if (!validator.isEmail(email.trim().toLowerCase())) {
-      return res.status(400).json({ message: "Invalid email format" });
+    if (gender !== undefined) {
+      if (typeof gender !== "string") return bad("Invalid gender");
+      updateFields.gender = gender.toLowerCase();
     }
-    if (!validator.isLength(firstName, { min: 3, max: 20 })) {
-      return res.status(400).json({
-        message: "First name must be between 3 and 20 characters",
-      });
-    }
-    if (!validator.isLength(lastName, { min: 3, max: 20 })) {
-      return res.status(400).json({
-        message: "Last name must be between 3 and 20 characters",
-      });
-    }
-    if (
-      phoneNumber &&
-      !validator.isMobilePhone(phoneNumber, "any", { strictMode: false })
-    ) {
-      return res.status(400).json({ message: "Invalid phone number format" });
-    }
-    if (phoneNumber && !validator.isLength(phoneNumber, { min: 10, max: 10 })) {
-      return res
-        .status(400)
-        .json({ message: "Phone number must be exactly 10 digits" });
+    if (photo !== undefined) {
+      // https image links only (no javascript:, data: or plain http)
+      if (
+        typeof photo !== "string" ||
+        !validator.isURL(photo, { protocols: ["https"], require_protocol: true })
+      ) {
+        return bad("Photo must be an https:// link");
+      }
+      updateFields.photo = photo;
     }
 
     if (phoneNumber !== undefined) {
-      const isPhoneValid = validator.isMobilePhone(phoneNumber, "any", {
-        strictMode: false,
-      });
-      if (!isPhoneValid) {
-        return res.status(400).json({ message: "Invalid phone number format" });
+      if (
+        typeof phoneNumber !== "string" ||
+        !/^\d{10}$/.test(phoneNumber) ||
+        !validator.isMobilePhone(phoneNumber, "any", { strictMode: false })
+      ) {
+        return bad("Phone number must be exactly 10 digits");
       }
       const isPhoneExists = await User.findOne({
         phoneNumber: phoneNumber,
         _id: { $ne: req.user._id }, // Exclude current user!
       });
       if (isPhoneExists) {
-        return res.status(400).json({ message: "Phone number already exist" });
+        return bad("Phone number is already in use");
       }
       updateFields.phoneNumber = phoneNumber;
     }
@@ -94,14 +93,12 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
     if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
     }
-    await updatedUser.save(); // Save the updated user to the database
     res
       .status(200)
       .json({ message: "Profile updated successfully", user: updatedUser });
   } catch (error) {
-    res
-      .status(500)
-      .json({ error: "Something went wrong", details: publicError(error) });
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({ message, error: message });
   }
 });
 

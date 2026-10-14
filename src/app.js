@@ -1,3 +1,4 @@
+import "./config/timezone.js"; // must stay first: server dates run in UTC
 import express from "express";
 import env from "dotenv";
 import connectDB from "./config/database.js";

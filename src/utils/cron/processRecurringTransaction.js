@@ -1,208 +1,51 @@
 import RecurringTransaction from "../../model/recurringTransaction.js";
-import Transaction from "../../model/transactions.js";
 import cron from "node-cron";
-import { addDays, addWeeks, addMonths, addYears } from "date-fns";
+import { addDays } from "date-fns";
 import User from "../../model/user.js";
 import { sendRecurringTransactionEmail } from "../autoEmail/mailer.js";
-import { extractTags } from "../tags/extractTags.js";
+import { processDueRecurring } from "./recurringEngine.js";
 
-function getNextOccurrence(frequency, baseDate) {
-  const base = new Date(baseDate);
-  switch (frequency) {
-    case "daily":
-      return addDays(base, 1);
-    case "weekly":
-      return addWeeks(base, 1);
-    case "monthly":
-      return addMonths(base, 1);
-    case "yearly":
-      return addYears(base, 1);
-    default:
-      return null;
-  }
-}
+// Email users about recurring transactions due tomorrow (UTC day)
+async function sendTomorrowReminders() {
+  const tomorrowStart = addDays(new Date(), 1);
+  tomorrowStart.setUTCHours(0, 0, 0, 0);
+  const tomorrowEnd = new Date(tomorrowStart);
+  tomorrowEnd.setUTCHours(23, 59, 59, 999);
 
-function getMissedOccurrences(frequency, start, today, endDate) {
-  let dates = [];
-  let next = new Date(start);
-  let maxLoop = 30; // safety limit
-  for (let i = 0; i < maxLoop; i++) {
-    next = getNextOccurrence(frequency, next);
-    if (!next || next > today) break;
-    if (endDate && next > endDate) break;
-    dates.push(new Date(next));
-  }
-  return dates;
-}
+  const reminders = await RecurringTransaction.find({
+    isActive: true,
+    nextOccurrence: { $gte: tomorrowStart, $lte: tomorrowEnd },
+  });
+  console.log(`[CRON] ${reminders.length} reminder(s) for tomorrow`);
 
-cron.schedule("0 0 * * *", async () => {
-  console.log(
-    `[CRON] Recurring transaction job started at ${new Date().toISOString()}`
-  );
-  try {
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999);
-
-    // 1. Send reminders for tomorrow's due recurring transactions
-    const tomorrow = addDays(today, 1);
-    const tomorrowStart = new Date(tomorrow);
-    tomorrowStart.setHours(0, 0, 0, 0);
-    const tomorrowEnd = new Date(tomorrow);
-    tomorrowEnd.setHours(23, 59, 59, 999);
-
-    const reminders = await RecurringTransaction.find({
-      isActive: true,
-      nextOccurrence: { $gte: tomorrowStart, $lte: tomorrowEnd },
-    });
-
-    console.log(
-      `[CRON] Found ${reminders.length} recurring transactions for tomorrow's reminders.`
-    );
-
-    for (const rt of reminders) {
-      const user = await User.findById(rt.userId);
-      if (user?.email) {
-        try {
-          await sendRecurringTransactionEmail(
-            user.email,
-            {
-              amount: rt.amount,
-              category: rt.category,
-              note: rt.note,
-              date: rt.nextOccurrence,
-            },
-            true
-          );
-          console.log(
-            `[CRON] Reminder email sent for recurringTxn=${rt._id} to ${user.email}`
-          );
-        } catch (err) {
-          console.error(
-            `[CRON] Failed to send reminder for recurringTxn=${rt._id}:`,
-            err
-          );
-        }
-      }
-    }
-
-    // 2. Handle all active recurring transactions whose nextOccurrence is today or earlier (catch up missed txns)
-    const recurrings = await RecurringTransaction.find({
-      isActive: true,
-      nextOccurrence: { $lte: todayEnd },
-      $or: [
-        { endDate: { $exists: false } },
-        { endDate: null },
-        { endDate: { $gte: today } },
-      ],
-    });
-
-    console.log(
-      `[CRON] Found ${recurrings.length} recurring transactions to process for today or earlier.`
-    );
-
-    for (const rt of recurrings) {
-      // Build list of all missed/should-be-added occurrences, including today
-      const missedDates = [];
-      if (rt.nextOccurrence && rt.nextOccurrence <= todayEnd) {
-        missedDates.push(new Date(rt.nextOccurrence));
-        missedDates.push(
-          ...getMissedOccurrences(
-            rt.frequency,
-            rt.nextOccurrence,
-            todayEnd,
-            rt.endDate
-          )
-        );
-      }
-
-      for (const txnDate of missedDates) {
-        // Prevent duplicate transactions
-        const exists = await Transaction.exists({
-          recurringTransactionId: rt._id,
-          date: {
-            $gte: new Date(new Date(txnDate).setHours(0, 0, 0, 0)),
-            $lte: new Date(new Date(txnDate).setHours(23, 59, 59, 999)),
-          },
-        });
-        if (exists) {
-          console.log(
-            `[CRON] Transaction already exists for recurringTxn=${
-              rt._id
-            } on ${txnDate.toISOString()}`
-          );
-          continue;
-        }
-        let tags = [];
-        if (
-          (!rt.tags || !rt.tags.length) &&
-          rt.note &&
-          rt.note.trim().length > 0
-        ) {
-          try {
-            tags = await extractTags(rt.note);
-            rt.tags = tags;
-            await rt.save();
-          } catch (error) {
-            console.error(
-              `[CRON] Error extracting tags for recurringTxn=${rt._id}:`,
-              error
-            );
-          }
-        } else {
-          tags = rt.tags || [];
-        }
-        const newTransaction = new Transaction({
-          userId: rt.userId,
-          type: rt.type,
+  for (const rt of reminders) {
+    const user = await User.findById(rt.userId);
+    if (!user?.email) continue;
+    try {
+      await sendRecurringTransactionEmail(
+        user.email,
+        {
           amount: rt.amount,
           category: rt.category,
           note: rt.note,
-          date: txnDate,
-          isRecurring: true,
-          frequency: rt.frequency,
-          tags: tags,
-          createdBy: rt.userId,
-          updatedBy: rt.userId,
-          recurringTransactionId: rt._id,
-        });
-
-        try {
-          await newTransaction.save();
-          console.log(
-            `[CRON] Added transaction for recurringTxn=${
-              rt._id
-            } on ${txnDate.toISOString()}`
-          );
-        } catch (err) {
-          console.error(
-            `[CRON] Failed to add transaction for recurringTxn=${
-              rt._id
-            } on ${txnDate.toISOString()}:`,
-            err
-          );
-        }
-      }
-      if (missedDates.length > 0) {
-        rt.lastOccurrence = missedDates[missedDates.length - 1];
-        rt.nextOccurrence = getNextOccurrence(rt.frequency, rt.lastOccurrence);
-
-        if (rt.endDate && rt.nextOccurrence > rt.endDate) {
-          rt.isActive = false;
-          console.log(
-            `[CRON] Deactivated recurringTxn=${rt._id} because nextOccurrence is past endDate.`
-          );
-        }
-        await rt.save();
-      }
+          date: rt.nextOccurrence,
+        },
+        true
+      );
+    } catch (err) {
+      console.error(`[CRON] Reminder failed for recurringTxn=${rt._id}:`, err);
     }
-    console.log(
-      `[CRON] Recurring transaction job finished at ${new Date().toISOString()}`
-    );
+  }
+}
+
+// Daily at 00:00 UTC (05:30 IST)
+cron.schedule("0 0 * * *", async () => {
+  console.log(`[CRON] Recurring job started at ${new Date().toISOString()}`);
+  try {
+    await sendTomorrowReminders();
+    await processDueRecurring();
   } catch (error) {
-    console.error(`[CRON] Error processing recurring transactions:`, error);
+    console.error("[CRON] Recurring job failed:", error);
   }
 });
 

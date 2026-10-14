@@ -12,18 +12,17 @@ tagRouter.post("/extractTags/:id", userAuth, async (req, res) => {
     if (!txnDetails) {
       return res.status(404).send({ error: "Transaction not found" });
     }
-    const note = txnDetails.note || "";
-    if (note.trim().length) {
-      const tags = await extractTags(note);
-      txnDetails.tags = tags;
-
-      txnDetails.updatedBy = userId;
-      await txnDetails.save();
-      res.status(200).send({
-        message: "Tags extracted and updated successfully",
-        data: txnDetails,
-      });
+    const note = (txnDetails.note || "").trim();
+    if (!note) {
+      // Nothing to tag; always answer so the client doesn't hang
+      return res.status(200).send({ message: "No note to tag", data: txnDetails });
     }
+    txnDetails.tags = await extractTags(note);
+    await txnDetails.save();
+    res.status(200).send({
+      message: "Tags extracted and updated successfully",
+      data: txnDetails,
+    });
   } catch (error) {
     console.error("Error extracting tags:", error);
     res.status(500).send({ error: "Failed to extract tags" });
@@ -44,26 +43,27 @@ tagRouter.post("/extractTags/UpdateAll/batch", userAuth, async (req, res) => {
         .send({ error: "No transactions with notes found" });
     }
 
-    const operations = transactions.map(async (txn) => {
+    // At most 5 OpenAI calls at a time
+    const tagOne = async (txn) => {
       try {
         if (!txn.note || txn.note.trim().length < 5) return null;
-
         if (txn.tags && txn.tags.length > 0) {
           return { id: txn._id, status: "skipped" };
         }
-
-        const tags = await extractTags(txn.note);
-        txn.tags = tags;
-        txn.updatedBy = userId;
+        txn.tags = await extractTags(txn.note);
         await txn.save();
         return { id: txn._id, status: "success" };
       } catch (err) {
         console.error(`Tag extraction failed for txn=${txn._id}:`, err);
         return { id: txn._id, status: "failed", error: "Tag extraction failed" };
       }
-    });
-
-    const results = await Promise.allSettled(operations);
+    };
+    const results = [];
+    for (let i = 0; i < transactions.length; i += 5) {
+      results.push(
+        ...(await Promise.allSettled(transactions.slice(i, i + 5).map(tagOne)))
+      );
+    }
     const successful = results.filter(
       (r) => r.status === "fulfilled" && r.value?.status === "success"
     );

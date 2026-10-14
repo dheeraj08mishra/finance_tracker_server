@@ -1,9 +1,10 @@
 import express from "express";
-import { publicError } from "../utils/errors.js";
+import { publicError, errorStatus } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import Transaction from "../model/transactions.js";
 import Goal from "../model/goal.js";
-import { extractTags } from "../utils/tags/extractTags.js";
+import mongoose from "mongoose";
+import { toDayString } from "../utils/dates.js";
 const goalRouter = express.Router();
 
 goalRouter.post("/goal/create", userAuth, async (req, res) => {
@@ -50,7 +51,7 @@ goalRouter.post("/goal/create", userAuth, async (req, res) => {
     res.status(201).json({ message: "Goal created successfully", goal });
   } catch (error) {
     res
-      .status(500)
+      .status(errorStatus(error))
       .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
@@ -67,63 +68,70 @@ goalRouter.get("/goal/list", userAuth, async (req, res) => {
     res.status(200).json({ message: "Goals retrieved successfully", goals });
   } catch (error) {
     res
-      .status(500)
+      .status(errorStatus(error))
       .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
 
 goalRouter.patch("/goal/update/:id", userAuth, async (req, res) => {
-  const session = await Goal.startSession();
-  session.startTransaction();
   try {
     const goalId = req.params.id;
     const { addAmount } = req.body;
-    if (!addAmount || typeof addAmount !== "number" || addAmount < 0) {
+    if (typeof addAmount !== "number" || !Number.isFinite(addAmount) || addAmount <= 0) {
       return res
         .status(400)
         .json({ error: "amount must be a positive number" });
     }
-    const goal = await Goal.findOne({ _id: goalId, userId: req.user._id });
-    if (!goal) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(404).json({ error: "Goal not found" });
-    }
-    if (goal.isCompleted && goal.currentAmount >= goal.targetAmount) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "Goal is already completed" });
-    }
-    goal.currentAmount += addAmount;
-    let excessAmount = 0;
-    if (goal.currentAmount > goal.targetAmount) {
-      excessAmount = goal.currentAmount - goal.targetAmount;
-      goal.currentAmount = goal.targetAmount;
-    }
-    const transaction = new Transaction({
-      userId: req.user._id,
-      type: "expense",
-      amount: addAmount - excessAmount,
-      category: "goal",
-      note: `Contribution to goal ${goal.title}`,
-      date: new Date(),
-      goalId: goalId,
-      isGoalTransaction: true,
+
+    // Commits on success, rolls back and ends the session on any error
+    const result = await mongoose.connection.transaction(async (session) => {
+      const goal = await Goal.findOne({ _id: goalId, userId: req.user._id }).session(session);
+      if (!goal) return { status: 404, body: { error: "Goal not found" } };
+      if (goal.currentAmount >= goal.targetAmount) {
+        return { status: 400, body: { error: "Goal is already completed" } };
+      }
+
+      // Only what is still needed is taken; the rest stays with the user
+      const contribution = Math.min(addAmount, goal.targetAmount - goal.currentAmount);
+      goal.currentAmount += contribution;
+      goal.checkGoalStatus();
+
+      await Transaction.create(
+        [
+          {
+            userId: req.user._id,
+            type: "expense",
+            amount: contribution,
+            category: "goal",
+            note: `Contribution to goal ${goal.title}`,
+            tags: ["goal", "savings"],
+            date: toDayString(new Date()),
+            goalId,
+            isGoalTransaction: true,
+          },
+        ],
+        { session }
+      );
+      await goal.save({ session });
+
+      const excessAmount = addAmount - contribution;
+      return {
+        status: 200,
+        body: {
+          message:
+            excessAmount > 0
+              ? `Goal reached! Only ₹${contribution} was needed, so ₹${excessAmount} was not added.`
+              : "Goal updated successfully",
+          goal,
+          contribution,
+          excessAmount,
+        },
+      };
     });
-
-    const tags = await extractTags(transaction.note);
-    transaction.tags = tags;
-
-    await transaction.save({ session });
-
-    goal.checkGoalStatus();
-    await goal.save({ session });
-    await session.commitTransaction();
-    session.endSession();
-    res.status(200).json({ message: "Goal updated successfully", goal });
+    res.status(result.status).json(result.body);
   } catch (error) {
     res
-      .status(500)
+      .status(errorStatus(error))
       .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
@@ -141,7 +149,7 @@ goalRouter.delete("/goal/delete/:id", userAuth, async (req, res) => {
     res.status(200).json({ message: "Goal deleted successfully", goal });
   } catch (error) {
     res
-      .status(500)
+      .status(errorStatus(error))
       .json({ error: "Something went wrong", details: publicError(error) });
   }
 });
