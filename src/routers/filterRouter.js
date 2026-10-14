@@ -2,6 +2,7 @@ import express from "express";
 import userAuth from "../middleware/auth.js";
 const filterRouter = express.Router();
 import Transaction from "../model/transactions.js";
+import { isFutureDay } from "../utils/dates.js";
 
 // filter by note
 
@@ -50,21 +51,16 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
         message: "From date cannot be later than To date",
       });
     }
-    // Check if fromDate and toDate are in the future but only date not time
-    if (
-      fromDate &&
-      new Date(fromDate).setHours(0, 0, 0, 0) > new Date().setHours(0, 0, 0, 0)
-    ) {
+    // Future = a day that has not started anywhere yet (users ahead of UTC,
+    // e.g. IST after midnight, send their own "today")
+    if (fromDate && isFutureDay(fromDate)) {
       return res.status(400).json({
         success: false,
         message: "From date cannot be in the future",
       });
     }
 
-    if (
-      toDate &&
-      new Date(toDate).setHours(0, 0, 0, 0) > new Date().setHours(0, 0, 0, 0)
-    ) {
+    if (toDate && isFutureDay(toDate)) {
       return res.status(400).json({
         success: false,
         message: "To date cannot be in the future",
@@ -106,10 +102,8 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
         $lte: cleanedToDate,
       };
     } else if (cleanedFromDate) {
-      filter.date = {
-        $gte: cleanedFromDate,
-        $lte: new Date(),
-      };
+      // No upper bound: "now" in UTC would hide today's entries for IST users
+      filter.date = { $gte: cleanedFromDate };
     } else if (cleanedToDate) {
       filter.date = {
         $gte: new Date(0),
