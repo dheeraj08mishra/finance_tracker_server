@@ -15,7 +15,15 @@ try {
   process.exit(1);
 }
 console.log("MongoDB connected successfully");
-await import("./utils/cron/processRecurringTransaction.js");
+// Scheduled jobs run here unless a separate worker (npm run worker) does
+// them: set RUN_JOBS=false on the API then
+let stopJobs = () => {};
+if (process.env.RUN_JOBS !== "false") {
+  const { startJobs } = await import("./utils/cron/jobs.js");
+  stopJobs = startJobs();
+} else {
+  console.log("Scheduled jobs are off here (RUN_JOBS=false): run the worker");
+}
 
 const server = createApp().listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
@@ -24,6 +32,7 @@ const server = createApp().listen(PORT, () => {
 // pm2 restart / deploys: finish in-flight requests, then close the DB
 const shutdown = (signal) => {
   console.log(`${signal} received, shutting down`);
+  stopJobs();
   server.close(() => mongoose.disconnect().finally(() => process.exit(0)));
   setTimeout(() => process.exit(1), 10000).unref();
 };

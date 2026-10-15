@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "make-admin": "node makeAdmin.js",
-    "send-summaries": "node sendSummaries.js"
+    "send-summaries": "node sendSummaries.js",
+    "worker": "node src/worker.js"
   },
   "author": "dheeraj mishra",
   "license": "ISC",
