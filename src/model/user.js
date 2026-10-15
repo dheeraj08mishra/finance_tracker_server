@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import validator from "validator";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { USER_FREQUENCIES } from "../utils/dates.js";
 const { Schema } = mongoose;
 
 // Old accounts were given this placeholder, which no longer exists.
@@ -101,6 +102,25 @@ const userSchema = new Schema(
           budgetAlerts: { type: Boolean, default: true },
           monthlySummary: { type: Boolean, default: true },
           recurringReminders: { type: Boolean, default: true },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
+    // Defaults for new transactions (Settings page)
+    preferences: {
+      type: new Schema(
+        {
+          defaultCategory: {
+            type: String,
+            enum: ["need", "want", "investment", "other"],
+            default: "need",
+          },
+          defaultFrequency: {
+            type: String,
+            enum: USER_FREQUENCIES,
+            default: "monthly",
+          },
         },
         { _id: false }
       ),

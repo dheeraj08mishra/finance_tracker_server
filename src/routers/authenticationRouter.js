@@ -96,6 +96,7 @@ authenticationRouter.post("/signup", async (req, res) => {
         fullName: newUser.fullName,
         role: newUser.role,
         notifications: newUser.notifications,
+        preferences: newUser.preferences,
       },
     });
   } catch (error) {
@@ -136,6 +137,7 @@ authenticationRouter.post("/login", async (req, res) => {
         fullName: user.fullName,
         role: user.role,
         notifications: user.notifications,
+        preferences: user.preferences,
         gender: user.gender,
         // age: user.age,
       },
@@ -170,6 +172,7 @@ authenticationRouter.get("/me", userAuth, async (req, res) => {
         fullName: user.fullName,
         role: user.role,
         notifications: user.notifications,
+        preferences: user.preferences,
         gender: user.gender,
         // age: user.age,
       },

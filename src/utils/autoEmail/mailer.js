@@ -45,7 +45,7 @@ function layout(title, bodyHtml) {
 <h2 style="margin:0 0 16px;font-size:20px">${escapeHtml(title)}</h2>
 ${bodyHtml}
 <p style="margin-top:24px;font-size:12px;color:#6b7280">You can change which emails you get in
-<a href="${appUrl()}/profile" style="color:#4f46e5">Profile → Notifications</a>.</p>
+<a href="${appUrl()}/settings" style="color:#4f46e5">Settings → Email notifications</a>.</p>
 </div></div>`;
 }
 

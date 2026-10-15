@@ -5,6 +5,7 @@ import User from "../model/user.js";
 import validator from "validator";
 import { setAuthCookie } from "../utils/security.js";
 import { newPasswordProblem, setNewPassword } from "../utils/passwords.js";
+import { USER_FREQUENCIES } from "../utils/dates.js";
 const profileRouter = express.Router();
 
 profileRouter.post("/user/profile", userAuth, async (req, res) => {
@@ -178,6 +179,38 @@ profileRouter.patch("/user/notifications", userAuth, async (req, res) => {
       message: "Email settings saved",
       notifications: user.notifications,
     });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({ message, error: message });
+  }
+});
+
+// Defaults for new transactions: { defaultCategory, defaultFrequency }
+const PREFERENCES = {
+  defaultCategory: ["need", "want", "investment", "other"],
+  defaultFrequency: USER_FREQUENCIES,
+};
+
+profileRouter.patch("/user/preferences", userAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const keys = Object.keys(body);
+    const bad = keys.find((k) => !PREFERENCES[k]?.includes(body[k]));
+    if (!keys.length || bad) {
+      return res.status(400).json({
+        message: bad
+          ? `${bad} must be one of: ${(PREFERENCES[bad] || []).join(", ") || "(unknown setting)"}`
+          : "Send defaultCategory and/or defaultFrequency",
+      });
+    }
+    const update = Object.fromEntries(
+      keys.map((k) => [`preferences.${k}`, body[k]])
+    );
+    const user = await User.findByIdAndUpdate(req.user._id, update, {
+      new: true,
+      runValidators: true,
+    });
+    res.json({ message: "Settings saved", preferences: user.preferences });
   } catch (error) {
     const message = publicError(error);
     res.status(errorStatus(error)).json({ message, error: message });
