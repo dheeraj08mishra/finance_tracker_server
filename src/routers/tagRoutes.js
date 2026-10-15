@@ -1,5 +1,7 @@
 import { extractTags } from "../utils/tags/extractTags.js";
 import express from "express";
+import { normalizeTags } from "../utils/tags/normalizeTags.js";
+import { publicError, errorStatus } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import Transaction from "../model/transactions.js";
 
@@ -12,18 +14,19 @@ tagRouter.post("/extractTags/:id", userAuth, async (req, res) => {
     if (!txnDetails) {
       return res.status(404).send({ error: "Transaction not found" });
     }
-    const note = txnDetails.note || "";
-    if (note.trim().length) {
-      const tags = await extractTags(note);
-      txnDetails.tags = tags;
-
-      txnDetails.updatedBy = userId;
-      await txnDetails.save();
-      res.status(200).send({
-        message: "Tags extracted and updated successfully",
-        data: txnDetails,
-      });
+    const note = (txnDetails.note || "").trim();
+    if (!note) {
+      // Nothing to tag; always answer so the client doesn't hang
+      return res
+        .status(200)
+        .send({ message: "No note to tag", data: txnDetails });
     }
+    txnDetails.tags = await extractTags(note);
+    await txnDetails.save();
+    res.status(200).send({
+      message: "Tags extracted and updated successfully",
+      data: txnDetails,
+    });
   } catch (error) {
     console.error("Error extracting tags:", error);
     res.status(500).send({ error: "Failed to extract tags" });
@@ -44,25 +47,31 @@ tagRouter.post("/extractTags/UpdateAll/batch", userAuth, async (req, res) => {
         .send({ error: "No transactions with notes found" });
     }
 
-    const operations = transactions.map(async (txn) => {
+    // At most 5 OpenAI calls at a time
+    const tagOne = async (txn) => {
       try {
         if (!txn.note || txn.note.trim().length < 5) return null;
-
         if (txn.tags && txn.tags.length > 0) {
           return { id: txn._id, status: "skipped" };
         }
-
-        const tags = await extractTags(txn.note);
-        txn.tags = tags;
-        txn.updatedBy = userId;
+        txn.tags = await extractTags(txn.note);
         await txn.save();
         return { id: txn._id, status: "success" };
       } catch (err) {
-        return { id: txn._id, status: "failed", error: err.message };
+        console.error(`Tag extraction failed for txn=${txn._id}:`, err);
+        return {
+          id: txn._id,
+          status: "failed",
+          error: "Tag extraction failed",
+        };
       }
-    });
-
-    const results = await Promise.allSettled(operations);
+    };
+    const results = [];
+    for (let i = 0; i < transactions.length; i += 5) {
+      results.push(
+        ...(await Promise.allSettled(transactions.slice(i, i + 5).map(tagOne)))
+      );
+    }
     const successful = results.filter(
       (r) => r.status === "fulfilled" && r.value?.status === "success"
     );
@@ -83,27 +92,39 @@ tagRouter.post("/extractTags/UpdateAll/batch", userAuth, async (req, res) => {
   }
 });
 
+// The user's tags, A-Z (one distinct query, no full scan into memory)
 tagRouter.get("/allTags", userAuth, async (req, res) => {
-  const userId = req.user._id;
   try {
-    const transactions = await Transaction.find({ userId }).select("tags _id");
-    const allTags = new Set();
-    transactions.forEach((txn) => {
-      if (txn.tags && Array.isArray(txn.tags)) {
-        txn.tags.forEach((tag) => {
-          if (tag && tag.trim().length > 0) {
-            allTags.add(tag.trim().toLowerCase());
-          }
-        });
-      }
-    });
+    const tags = await Transaction.distinct("tags", { userId: req.user._id });
     res.status(200).send({
       message: "Tags fetched successfully",
-      data: Array.from(allTags),
+      data: tags.filter(Boolean).sort((a, b) => a.localeCompare(b)),
     });
   } catch (error) {
     console.error("Error fetching tags:", error);
     return res.status(500).send({ error: "Failed to fetch tags" });
   }
 });
+
+// Set a transaction's tags. Allowed for any month: tags are labels, not
+// money, so past months (otherwise read-only) can still be organised.
+tagRouter.patch("/user/transaction/:id/tags", userAuth, async (req, res) => {
+  try {
+    const { tags, error } = normalizeTags(req.body.tags);
+    if (error) return res.status(400).send({ message: error, error });
+    const txn = await Transaction.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user._id },
+      { tags },
+      { new: true, runValidators: true }
+    );
+    if (!txn) {
+      return res.status(404).send({ message: "Transaction not found" });
+    }
+    res.status(200).send({ message: "Tags updated", data: txn });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).send({ message, error: message });
+  }
+});
+
 export default tagRouter;

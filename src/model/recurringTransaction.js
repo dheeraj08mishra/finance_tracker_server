@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 const { Schema } = mongoose;
 import validator from "validator";
+import { isFutureDay, ALL_FREQUENCIES } from "../utils/dates.js";
 
 const recurringTransactionSchema = new Schema(
   {
@@ -33,18 +34,26 @@ const recurringTransactionSchema = new Schema(
     frequency: {
       type: String,
       required: true,
-      enum: ["minutely", "daily", "weekly", "monthly", "yearly"],
+      enum: ALL_FREQUENCIES,
     },
     startDate: {
       type: Date,
       required: true,
       default: Date.now,
       validate: {
-        validator: function (value) {
-          return value <= new Date();
-        },
+        validator: (value) => !isFutureDay(value),
         message: "Start date cannot be in the future",
       },
+    },
+    // Optional: no occurrences are created after this day
+    endDate: {
+      type: Date,
+      default: null,
+    },
+    // Occurrence days the user chose to skip (no transaction is created)
+    skipDates: {
+      type: [Date],
+      default: [],
     },
     isActive: {
       type: Boolean,
@@ -58,10 +67,7 @@ const recurringTransactionSchema = new Schema(
       type: Date,
       default: null,
       validate: {
-        validator: function (value) {
-          if (!value) return true;
-          return value <= new Date();
-        },
+        validator: (value) => !value || !isFutureDay(value),
         message: "Last occurrence cannot be in the future",
       },
     },

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 20 = what EC2 runs today, 22 = the planned upgrade
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # The in-memory MongoDB binary (~100 MB) is downloaded once and cached
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test

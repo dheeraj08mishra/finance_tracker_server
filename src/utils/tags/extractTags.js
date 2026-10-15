@@ -4,7 +4,9 @@ const openai = new OpenAI({
 });
 
 export const extractTags = async (text) => {
-  if (!text || text.trim().length < 5) return [text.trim().toLowerCase()];
+  const clean = typeof text === "string" ? text.trim() : "";
+  if (!clean) return [];
+  if (clean.length < 5) return [clean.toLowerCase().slice(0, 20)];
 
   const prompt = `Extract 3-5 relevant, concise personal finance tags (single words or short phrases, no duplicates) for this expense note: "${text}". Output only the tags, comma-separated, without any additional text.`;
 
@@ -20,7 +22,8 @@ export const extractTags = async (text) => {
       return text
         .split(" ")
         .slice(0, 3)
-        .map((tag) => tag.trim().toLowerCase());
+        .map((tag) => tag.trim().toLowerCase().slice(0, 20))
+        .filter(Boolean);
     }
     const tags = [
       ...new Set(

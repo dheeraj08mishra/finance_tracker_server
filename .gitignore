@@ -18,3 +18,5 @@ all_users_with_transactions.json
 fakeusergenerate.js
 serviceAccountKey.json
 transactionGenerate.js
+.env.*
+uploads/

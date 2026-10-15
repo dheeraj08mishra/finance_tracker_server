@@ -2,7 +2,14 @@ import mongoose from "mongoose";
 import validator from "validator";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { USER_FREQUENCIES } from "../utils/dates.js";
 const { Schema } = mongoose;
+
+// Old accounts were given this placeholder, which no longer exists.
+// Treat it (and empty values) as "no photo".
+const DEAD_DEFAULT_PHOTO =
+  "https://s3.amazonaws.com/37assets/svn/765-default-avatar.png";
+const normalizePhoto = (v) => (!v || v === DEAD_DEFAULT_PHOTO ? null : v);
 
 const userSchema = new Schema(
   {
@@ -74,11 +81,107 @@ const userSchema = new Schema(
         message: (props) => `${props.value} is not a valid phone number!`,
       },
     },
+    // Monthly spending limit per category (null = no budget)
+    budgets: {
+      _id: false,
+      type: new Schema(
+        {
+          need: { type: Number, min: 0, default: null },
+          want: { type: Number, min: 0, default: null },
+          investment: { type: Number, min: 0, default: null },
+          other: { type: Number, min: 0, default: null },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
+    // Which emails the user wants (all on by default)
+    notifications: {
+      type: new Schema(
+        {
+          budgetAlerts: { type: Boolean, default: true },
+          monthlySummary: { type: Boolean, default: true },
+          recurringReminders: { type: Boolean, default: true },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
+    // Defaults for new transactions (Settings page)
+    preferences: {
+      type: new Schema(
+        {
+          defaultCategory: {
+            type: String,
+            enum: ["need", "want", "investment", "other"],
+            default: "need",
+          },
+          defaultFrequency: {
+            type: String,
+            enum: USER_FREQUENCIES,
+            default: "monthly",
+          },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
+    // Budget alert emails already sent, "YYYY-MM:category" -> level, so
+    // each level is emailed once per category per month
+    budgetAlertsSent: {
+      type: Map,
+      of: String,
+      default: () => new Map(),
+      select: false,
+    },
+    // Set on each sign-in (shown to admins as "last sign-in")
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
+    // "admin" can read the admin pages (stats, feedback). Granted only with
+    // the make-admin script, never through the API.
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+    // Bumped on password change; tokens carrying an older version are
+    // rejected (see auth middleware), which signs out every other session
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+    },
+    // Hashes of recent previous passwords (newest first), so they can't be
+    // reused. Never sent to clients.
+    passwordHistory: {
+      type: [String],
+      default: [],
+      select: false,
+    },
+    // Forgot-password link: only a SHA-256 of the token is stored, so a
+    // database leak can't be used to reset passwords. Single use.
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    // No photo by default: the app shows the user's initials
     photo: {
       type: String,
-      default: "https://s3.amazonaws.com/37assets/svn/765-default-avatar.png",
+      default: null,
+      get: normalizePhoto,
       validate: {
-        validator: validator.isURL,
+        validator: (v) => !v || validator.isURL(v),
         message: (props) => `${props.value} is not a valid URL!`,
       },
     },
@@ -89,6 +192,13 @@ const userSchema = new Schema(
       virtuals: true,
       transform: function (doc, ret) {
         delete ret.password;
+        delete ret.passwordHistory;
+        delete ret.budgetAlertsSent;
+        delete ret.passwordResetTokenHash;
+        delete ret.passwordResetExpires;
+        ret.photo = normalizePhoto(ret.photo);
+        delete ret.passwordChangedAt;
+        delete ret.tokenVersion;
         delete ret.__v;
         return ret;
       },
@@ -104,11 +214,17 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-userSchema.methods.getJWT = function () {
+// sid: the Session this login belongs to (see utils/sessions.js).
+// expiresIn: shorter for the mobile app's access tokens.
+userSchema.methods.getJWT = function (sid, expiresIn) {
   if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET not set");
-  return jwt.sign({ userId: this._id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRATION || "1d",
-  });
+  return jwt.sign(
+    { userId: this._id, tv: this.tokenVersion || 0, ...(sid && { sid }) },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: expiresIn || process.env.JWT_EXPIRATION || "1d",
+    }
+  );
 };
 
 // Compare password

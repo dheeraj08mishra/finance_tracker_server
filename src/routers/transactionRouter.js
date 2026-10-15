@@ -1,40 +1,38 @@
 import express from "express";
+import mongoose from "mongoose";
+import { publicError, errorStatus } from "../utils/errors.js";
 import Transaction from "../model/transactions.js";
 import userAuth from "../middleware/auth.js";
 import validator from "validator";
 import RecurringTransaction from "../model/recurringTransaction.js";
 import Goal from "../model/goal.js";
+import ExcelJS from "exceljs";
+import { MAX_AMOUNT, parseAmount } from "../utils/money.js";
+import { budgetStatus } from "../utils/budgets.js";
+import { notifyBudgetAlert } from "../utils/notifications.js";
+import { removeReceipt } from "../utils/receiptStorage.js";
 import {
-  addMinutes,
-  addDays,
-  addWeeks,
-  addMonths,
-  addYears,
-  isBefore,
-  startOfMonth,
-  isAfter,
-  format,
-  parseISO,
-} from "date-fns";
+  toDayString,
+  USER_FREQUENCIES,
+  isFutureDay,
+  earliestTodayString,
+  latestTodayString,
+  nextOccurrenceAfter,
+  MONTH_NAMES,
+} from "../utils/dates.js";
 
-import XLSX from "xlsx";
-
-function getNextOccurrence(frequency, baseDate) {
-  switch (frequency) {
-    case "minutely":
-      return addMinutes(baseDate, 1);
-    case "daily":
-      return addDays(baseDate, 1);
-    case "weekly":
-      return addWeeks(baseDate, 1);
-    case "monthly":
-      return addMonths(baseDate, 1);
-    case "yearly":
-      return addYears(baseDate, 1);
-    default:
-      return null;
+// Error message for a transaction date, or null if it is allowed.
+// Product rule: only days in the current month (lenient across timezones).
+const validateTransactionDay = (date) => {
+  if (typeof date !== "string" || !validator.isISO8601(date)) {
+    return "Invalid date format. Use YYYY-MM-DD.";
   }
-}
+  if (isFutureDay(date)) return "Date cannot be in the future";
+  if (toDayString(date).slice(0, 7) < earliestTodayString().slice(0, 7)) {
+    return "Date must be within the current month.";
+  }
+  return null;
+};
 
 const transactionRouter = express.Router();
 
@@ -53,41 +51,30 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
       endDate,
     } = req.body;
 
-    note = note.trim() || "";
+    note = typeof note === "string" ? note.trim() : "";
 
-    if (!validator.isISO8601(date)) {
-      return res
-        .status(400)
-        .json({ message: "Invalid date format. Use YYYY-MM-DD." });
-    }
-    const getUTCDate = (dateStr) => {
-      return new Date(dateStr).toISOString().slice(0, 10);
-    };
-
-    const inputDate = getUTCDate(date);
-
-    if (isBefore(parseISO(date), startOfMonth(new Date()))) {
-      toast.error("Date must be within the current month.");
-      return;
-    }
-    if (isAfter(parseISO(date), new Date())) {
-      return res.status(400).json({
-        success: false,
-        message: "Date cannot be in the future",
-      });
-    }
-
-    if (!type || !amount || !category || !date) {
+    if (!type || amount === undefined || !category || !date) {
       return res.status(400).json({
         success: false,
         message: "Please provide data in all required fields",
       });
     }
-
-    if (isRecurring && !frequency) {
+    const dateError = validateTransactionDay(date);
+    if (dateError) {
+      return res.status(400).json({ success: false, message: dateError });
+    }
+    const amountNum = parseAmount(amount);
+    if (amountNum === null) {
       return res.status(400).json({
         success: false,
-        message: "Frequency is required for recurring transactions",
+        message: `Amount must be a positive number up to ${MAX_AMOUNT}`,
+      });
+    }
+
+    if (isRecurring && !USER_FREQUENCIES.includes(frequency)) {
+      return res.status(400).json({
+        success: false,
+        message: `Frequency must be one of: ${USER_FREQUENCIES.join(", ")}`,
       });
     }
     if (!isRecurring && frequency) {
@@ -97,42 +84,64 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
           "Frequency should not be provided for non-recurring transactions",
       });
     }
+    if (
+      endDate &&
+      (!validator.isISO8601(String(endDate)) ||
+        toDayString(endDate) < toDayString(date))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "End date must be a valid date on or after the start date",
+      });
+    }
 
-    //  Always save the transaction
+    const inputDate = toDayString(date); // stored as UTC midnight of that day
     const newTransaction = new Transaction({
       userId: user._id,
       type,
-      amount: Number(parseFloat(amount).toFixed(2)),
+      amount: amountNum,
       note,
       category,
       date: inputDate,
-      isRecurring: isRecurring || false,
+      isRecurring: Boolean(isRecurring),
       frequency: isRecurring ? frequency : "",
     });
-    await newTransaction.save();
 
-    //  If recurring, also save in RecurringTransaction
     let newRecurringTransaction = null;
     if (isRecurring) {
-      const nextOccurrence = getNextOccurrence(frequency, inputDate);
-
       newRecurringTransaction = new RecurringTransaction({
         userId: user._id,
         type,
-        amount: Number(parseFloat(amount).toFixed(2)),
+        amount: amountNum,
         note,
         category,
         frequency,
         startDate: inputDate,
-        nextOccurrence,
+        nextOccurrence: nextOccurrenceAfter(frequency, inputDate, inputDate),
         isActive: true,
         lastOccurrence: null,
         parentTransactionId: newTransaction._id,
         createdBy: user._id,
         updatedBy: user._id,
-        ...(endDate && { endDate: getUTCDate(endDate) }),
+        ...(endDate && { endDate: toDayString(endDate) }),
       });
-      await newRecurringTransaction.save();
+      // Link the first transaction to its rule so it is never re-created
+      newTransaction.recurringTransactionId = newRecurringTransaction._id;
+      await newRecurringTransaction.validate();
+    }
+    await newTransaction.save();
+    if (newRecurringTransaction) await newRecurringTransaction.save();
+
+    // Close to (80%+) or over the category's budget for that month?
+    let budgetAlert = null;
+    if (type === "expense" && user.budgets?.[category]) {
+      const [y, m] = inputDate.split("-").map(Number);
+      const row = (await budgetStatus(user, y, m)).find(
+        (r) => r.category === category
+      );
+      if (row && row.level !== "ok") budgetAlert = row;
+      // Email too, once per level per category per month (if enabled)
+      if (budgetAlert) await notifyBudgetAlert(user, budgetAlert, y, m);
     }
 
     res.status(201).json({
@@ -140,12 +149,14 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
       message: "Transaction added successfully",
       data: newTransaction,
       recurring: newRecurringTransaction,
+      budgetAlert,
     });
   } catch (error) {
-    res.status(500).json({
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({
       success: false,
-      message: "Failed to add transaction",
-      error: error.message,
+      message,
+      error: message,
     });
   }
 });
@@ -174,45 +185,40 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
         },
       });
     }
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || totalTransactions;
-
-    if (isNaN(limit) || limit < 1) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid limit parameters",
-      });
-    }
-
+    // No limit = everything (History page relies on this until it paginates)
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    const limit =
+      req.query.limit === undefined
+        ? totalTransactions
+        : Number(req.query.limit);
     if (
-      isNaN(page) ||
+      !Number.isInteger(page) ||
       page < 1 ||
-      page > Math.ceil(totalTransactions / limit)
+      !Number.isInteger(limit) ||
+      limit < 1
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid page parameters",
+        message: "page and limit must be positive integers",
       });
     }
     const skip = (page - 1) * limit;
     const totalPages = Math.ceil(totalTransactions / limit);
 
-    const transactions = await Transaction.find({ userId: user._id })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    // total expense and income
-    const totalExpense = await Transaction.aggregate([
-      { $match: { userId: user._id, type: "expense" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+    // A page past the end is just empty, not an error
+    const [transactions, totals] = await Promise.all([
+      Transaction.find({ userId: user._id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Transaction.aggregate([
+        { $match: { userId: user._id, type: { $in: ["income", "expense"] } } },
+        { $group: { _id: "$type", total: { $sum: "$amount" } } },
+      ]),
     ]);
-    const totalIncome = await Transaction.aggregate([
-      { $match: { userId: user._id, type: "income" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    const totalExpenseAmount = totalExpense.length ? totalExpense[0].total : 0;
-    const totalIncomeAmount = totalIncome.length ? totalIncome[0].total : 0;
+    const totalOf = (type) => totals.find((t) => t._id === type)?.total || 0;
+    const totalExpenseAmount = totalOf("expense");
+    const totalIncomeAmount = totalOf("income");
     const balance = totalIncomeAmount - totalExpenseAmount;
 
     /// recurring transactions
@@ -238,10 +244,10 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
+    res.status(errorStatus(error)).json({
       success: false,
       message: "Something went wrong",
-      error: error.message,
+      error: publicError(error),
     });
   }
 });
@@ -266,7 +272,10 @@ transactionRouter.get(
         });
       }
       if (
-        !validator.isInt(year, { min: 2000, max: new Date().getFullYear() })
+        !validator.isInt(year, {
+          min: 2000,
+          max: Number(latestTodayString().slice(0, 4)),
+        })
       ) {
         return res.status(400).json({
           success: false,
@@ -296,10 +305,10 @@ transactionRouter.get(
         totalTransactions: transactions.length,
       });
     } catch (error) {
-      res.status(500).json({
+      res.status(errorStatus(error)).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -310,27 +319,20 @@ transactionRouter.get(
   userAuth,
   async (req, res) => {
     try {
-      const user = req.user;
-      const Transactions = await Transaction.find({ userId: user._id })
-        .sort({
-          date: -1,
-        })
-        .select({ date: 1 })
-        .distinct("date");
-
-      const monthList = Transactions.map((date) => {
-        const data = new Date(date);
-        return {
-          month: data.toLocaleString("default", { month: "long" }),
-          year: data.getFullYear(),
-        };
-      }).filter(
-        (value, index, self) =>
-          index ===
-          self.findIndex(
-            (t) => t.month === value.month && t.year === value.year
-          )
-      );
+      const months = await Transaction.aggregate([
+        { $match: { userId: req.user._id } },
+        {
+          $group: {
+            _id: { year: { $year: "$date" }, month: { $month: "$date" } },
+          },
+        },
+        { $sort: { "_id.year": -1, "_id.month": -1 } },
+      ]);
+      // English names: the frontend maps them back to month numbers
+      const monthList = months.map(({ _id }) => ({
+        month: MONTH_NAMES[_id.month - 1],
+        year: _id.year,
+      }));
 
       return res.status(200).json({
         success: true,
@@ -338,127 +340,102 @@ transactionRouter.get(
         data: monthList,
       });
     } catch (error) {
-      res.status(500).json({
+      res.status(errorStatus(error)).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
 );
 
 // Update a transaction
-// patched route
 transactionRouter.patch(
   "/user/update/transaction/:id",
   userAuth,
   async (req, res) => {
-    let session;
     try {
       const user = req.user;
       const { id } = req.params;
       let { type, amount, note, category, date } = req.body;
-      note = (note || "").trim();
+      note = typeof note === "string" ? note.trim() : "";
       if (!type || amount === undefined || !category || !date) {
         return res.status(400).json({
           success: false,
           message: "Please provide type, amount, category and date",
         });
       }
-
-      // Validate date format
-      if (!validator.isISO8601(date)) {
-        return res
-          .status(400)
-          .json({ message: "Invalid date format. Use YYYY-MM-DD." });
+      const dateError = validateTransactionDay(date);
+      if (dateError) {
+        return res.status(400).json({ success: false, message: dateError });
       }
-
-      const inputDate = new Date(date);
-      if (isBefore(inputDate, startOfMonth(new Date()))) {
+      const amountNum = parseAmount(amount);
+      if (amountNum === null) {
         return res.status(400).json({
           success: false,
-          message: "Date must be within the current month.",
-        });
-      }
-      if (isAfter(inputDate, new Date())) {
-        return res.status(400).json({
-          success: false,
-          message: "Date cannot be in the future",
+          message: `Amount must be a positive number up to ${MAX_AMOUNT}`,
         });
       }
 
-      // Numeric amount parsing & validation
-      const parsed = parseFloat(amount);
-      if (isNaN(parsed) || parsed <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Amount must be a positive number",
-        });
-      }
-      const amountNum = Number(parsed.toFixed(2));
-      session = await Transaction.startSession();
-      session.startTransaction();
+      // Commits on success, rolls back and ends the session on any error
+      const transaction = await mongoose.connection.transaction(
+        async (session) => {
+          const txn = await Transaction.findOne({
+            _id: id,
+            userId: user._id,
+          }).session(session);
+          if (!txn) return null;
 
-      const transaction = await Transaction.findOne({
-        _id: id,
-        userId: user._id,
-      }).session(session);
+          if (txn.isGoalTransaction && txn.goalId) {
+            // A goal contribution stays a goal expense; only amount/note/date change
+            type = "expense";
+            category = "goal";
+            const goal = await Goal.findOne({
+              _id: txn.goalId,
+              userId: user._id,
+            }).session(session);
+            if (goal) {
+              goal.currentAmount = Math.max(
+                0,
+                goal.currentAmount + amountNum - txn.amount
+              );
+              goal.checkGoalStatus();
+              await goal.save({ session });
+            }
+          }
+
+          txn.type = type;
+          txn.amount = amountNum;
+          txn.note = note;
+          txn.category = category;
+          txn.date = toDayString(date);
+          await txn.save({ session });
+
+          // Editing the first transaction of a series updates the series too
+          await RecurringTransaction.updateOne(
+            { parentTransactionId: txn._id, userId: user._id, isActive: true },
+            { type, amount: amountNum, note, category, updatedBy: user._id },
+            { session, runValidators: true }
+          );
+          return txn;
+        }
+      );
 
       if (!transaction) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(404).json({
-          success: false,
-          message: "Transaction not found",
-        });
+        return res
+          .status(404)
+          .json({ success: false, message: "Transaction not found" });
       }
-
-      if (transaction.isGoalTransaction && transaction.goalId) {
-        const goal = await Goal.findOne({
-          _id: transaction.goalId,
-          userId: user._id,
-        }).session(session);
-
-        if (goal) {
-          const oldAmount = Number(transaction.amount || 0);
-          const delta = amountNum - oldAmount;
-          goal.currentAmount = Math.max(0, goal.currentAmount + delta);
-          goal.checkGoalStatus();
-          await goal.save({ session });
-        }
-      }
-
-      transaction.type = type;
-      transaction.amount = amountNum;
-      transaction.note = note;
-      transaction.category = category;
-      transaction.date = inputDate;
-
-      await transaction.save({ session });
-
-      await session.commitTransaction();
-      session.endSession();
-
       res.status(200).json({
         success: true,
         message: "Transaction updated successfully",
         data: transaction,
       });
     } catch (error) {
-      if (session) {
-        try {
-          await session.abortTransaction();
-          session.endSession();
-        } catch (e) {
-          console.error("Error aborting session:", e);
-        }
-      }
-      console.error("Update transaction error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Something went wrong",
-        error: error.message,
-      });
+      const message = publicError(error);
+      res
+        .status(errorStatus(error))
+        .json({ success: false, message, error: message });
     }
   }
 );
@@ -468,96 +445,59 @@ transactionRouter.delete(
   "/user/transaction/delete/:id",
   userAuth,
   async (req, res) => {
-    const session = await Transaction.startSession();
-    session.startTransaction();
     try {
       const user = req.user;
       const { id } = req.params;
 
-      const transaction = await Transaction.findOne({
-        _id: id,
-        userId: user._id,
-      });
-      if (!transaction) {
-        return res.status(404).json({
-          success: false,
-          message: "Transaction not found",
-        });
-      }
+      const transaction = await mongoose.connection.transaction(
+        async (session) => {
+          const txn = await Transaction.findOne({
+            _id: id,
+            userId: user._id,
+          }).session(session);
+          if (!txn) return null;
 
-      if (transaction.isGoalTransaction && transaction.goalId) {
-        const goal = await Goal.findOne({
-          _id: transaction.goalId,
-          userId: user._id,
-        }).session(session);
-        if (goal) {
-          goal.currentAmount -= transaction.amount;
-          if (goal.currentAmount < 0) {
-            goal.currentAmount = 0;
+          if (txn.isGoalTransaction && txn.goalId) {
+            const goal = await Goal.findOne({
+              _id: txn.goalId,
+              userId: user._id,
+            }).session(session);
+            if (goal) {
+              goal.currentAmount = Math.max(0, goal.currentAmount - txn.amount);
+              goal.checkGoalStatus();
+              await goal.save({ session });
+            }
           }
-          goal.checkGoalStatus();
-          await goal.save({ session });
-        }
-      }
 
-      await Transaction.deleteOne({ _id: id, userId: user._id }).session(
-        session
+          // Deleting the first transaction of a series stops the series
+          // (it already disappeared from the Recurring page but kept running)
+          await RecurringTransaction.updateOne(
+            { parentTransactionId: txn._id, userId: user._id },
+            { isActive: false, nextOccurrence: null, updatedBy: user._id },
+            { session }
+          );
+
+          await Transaction.deleteOne({ _id: txn._id }).session(session);
+          return txn;
+        }
       );
 
-      await session.commitTransaction();
-      session.endSession();
-
+      if (!transaction) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Transaction not found" });
+      }
+      await removeReceipt(transaction.receipt?.key);
       res.status(200).json({
         success: true,
         message: "Transaction deleted successfully",
         data: { transactionId: transaction._id },
       });
     } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
-      res.status(500).json({
-        success: false,
-        message: "Something went wrong",
-        error: error.message,
-      });
-    }
-  }
-);
-
-/// add isRecurring and frequency to the transaction schema for old transactions
-transactionRouter.patch(
-  "/user/transactions/update/recurring",
-  userAuth,
-  async (req, res) => {
-    try {
-      const user = req.user;
-      const transactionsList = await Transaction.find({ userId: user._id });
-      if (!transactionsList || transactionsList.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: "No transactions found for the user",
-        });
-      }
-      console.log("transactionsList", transactionsList);
-      transactionsList.forEach(async (transaction) => {
-        if (transaction.isRecurring === undefined) {
-          transaction.isRecurring = false;
-          transaction.frequency = "";
-        }
-        await transaction.save();
-      });
-
-      res.status(200).json({
-        success: true,
-        message: "Transactions retrieved successfully",
-        data: transactionsList,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: "Something went wrong",
-        error: error.message,
-      });
+      const message = publicError(error);
+      res
+        .status(errorStatus(error))
+        .json({ success: false, message, error: message });
     }
   }
 );
@@ -620,14 +560,17 @@ transactionRouter.get(
         };
       });
 
-      const workSheet = XLSX.utils.json_to_sheet(exceldata);
-      const workBook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workBook, workSheet, "Transactions");
+      const workBook = new ExcelJS.Workbook();
+      const workSheet = workBook.addWorksheet("Transactions");
+      workSheet.columns = Object.keys(exceldata[0]).map((key) => ({
+        header: key,
+        key,
+        width: key === "Note" ? 40 : 14,
+      }));
+      workSheet.addRows(exceldata); // plain values: notes never become formulas
+      workSheet.getRow(1).font = { bold: true };
 
-      const excelBuffer = XLSX.write(workBook, {
-        bookType: "xlsx",
-        type: "buffer",
-      });
+      const excelBuffer = Buffer.from(await workBook.xlsx.writeBuffer());
       const filename =
         "transactions" +
         (month !== null && year !== null
@@ -642,10 +585,10 @@ transactionRouter.get(
       res.setHeader("Content-Length", excelBuffer.length);
       res.send(excelBuffer);
     } catch (error) {
-      res.status(500).json({
+      res.status(errorStatus(error)).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }
@@ -684,10 +627,10 @@ transactionRouter.get(
         data: transaction,
       });
     } catch (error) {
-      res.status(500).json({
+      res.status(errorStatus(error)).json({
         success: false,
         message: "Something went wrong",
-        error: error.message,
+        error: publicError(error),
       });
     }
   }

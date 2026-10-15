@@ -1,16 +1,20 @@
+// CLI: create all due recurring transactions for every user.
+// Usage: node script.js
+import "./src/config/timezone.js";
 import mongoose from "mongoose";
-import { manualRecurringSync } from "./manualRecurringTransaction.js";
 import dotenv from "dotenv";
+import { processDueRecurring } from "./src/utils/cron/recurringEngine.js";
 dotenv.config();
 
-mongoose.connect(process.env.MONGODB_URI);
-
-manualRecurringSync()
-  .then(() => {
-    console.log("Manual recurring sync completed.");
-    mongoose.disconnect();
-  })
-  .catch((err) => {
-    console.error("Manual recurring sync failed:", err);
-    mongoose.disconnect();
-  });
+await mongoose.connect(process.env.MONGODB_URI);
+try {
+  const { rules, created } = await processDueRecurring();
+  console.log(
+    `Recurring sync completed: ${rules} rule(s), ${created} created.`
+  );
+} catch (err) {
+  console.error("Recurring sync failed:", err);
+  process.exitCode = 1;
+} finally {
+  await mongoose.disconnect();
+}

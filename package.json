@@ -5,26 +5,45 @@
   "type": "module",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js"
+    "dev": "nodemon src/app.js",
+    "seed:demo": "node seedDemo.js",
+    "test": "node --test --test-reporter=spec test/*.test.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "make-admin": "node makeAdmin.js",
+    "send-summaries": "node sendSummaries.js",
+    "worker": "node src/worker.js"
   },
   "author": "dheeraj mishra",
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-ses": "^3.840.0",
-    "@faker-js/faker": "^9.8.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.16.0",
     "mongoose": "^8.15.0",
     "node-cron": "^4.1.0",
-    "nodemailer": "^7.0.4",
     "openai": "^5.9.0",
-    "validator": "^13.15.0",
-    "xlsx": "^0.18.5"
+    "validator": "^13.15.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@faker-js/faker": "^10.6.0",
+    "eslint": "^9.39.5",
+    "globals": "^15.15.0",
+    "mongodb-memory-server": "^10.4.3",
+    "prettier": "^3.9.10"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

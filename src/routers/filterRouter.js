@@ -2,12 +2,14 @@ import express from "express";
 import userAuth from "../middleware/auth.js";
 const filterRouter = express.Router();
 import Transaction from "../model/transactions.js";
+import { isFutureDay } from "../utils/dates.js";
+import { normalizeTag, isValidTag } from "../utils/tags/normalizeTags.js";
 
 // filter by note
 
 filterRouter.get("/filter", userAuth, async (req, res) => {
   try {
-    const { note, category, fromDate, toDate, sort, tags } = req.query;
+    const { note, category, fromDate, toDate, sort, tag } = req.query;
 
     const cleanedNote = note?.trim();
     if (cleanedNote && cleanedNote.length > 100) {
@@ -50,21 +52,16 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
         message: "From date cannot be later than To date",
       });
     }
-    // Check if fromDate and toDate are in the future but only date not time
-    if (
-      fromDate &&
-      new Date(fromDate).setHours(0, 0, 0, 0) > new Date().setHours(0, 0, 0, 0)
-    ) {
+    // Future = a day that has not started anywhere yet (users ahead of UTC,
+    // e.g. IST after midnight, send their own "today")
+    if (fromDate && isFutureDay(fromDate)) {
       return res.status(400).json({
         success: false,
         message: "From date cannot be in the future",
       });
     }
 
-    if (
-      toDate &&
-      new Date(toDate).setHours(0, 0, 0, 0) > new Date().setHours(0, 0, 0, 0)
-    ) {
+    if (toDate && isFutureDay(toDate)) {
       return res.status(400).json({
         success: false,
         message: "To date cannot be in the future",
@@ -92,7 +89,21 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
       cleanedToDate.setHours(23, 59, 59, 999); // Set to end of the day
     }
 
+    // tag=food or tag=food,travel (transactions carrying every one)
+    const tagList =
+      typeof tag === "string" && tag.trim()
+        ? [...new Set(tag.split(",").map(normalizeTag).filter(Boolean))]
+        : [];
+    if (tagList.length > 5 || tagList.some((t) => !isValidTag(t))) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid tag filter" });
+    }
+
     const filter = { userId: req.user._id };
+    if (tagList.length) {
+      filter.tags = tagList.length === 1 ? tagList[0] : { $all: tagList };
+    }
     if (cleanedNote) {
       filter.note = { $regex: cleanedNote, $options: "i" };
     }
@@ -106,10 +117,8 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
         $lte: cleanedToDate,
       };
     } else if (cleanedFromDate) {
-      filter.date = {
-        $gte: cleanedFromDate,
-        $lte: new Date(),
-      };
+      // No upper bound: "now" in UTC would hide today's entries for IST users
+      filter.date = { $gte: cleanedFromDate };
     } else if (cleanedToDate) {
       filter.date = {
         $gte: new Date(0),
@@ -117,38 +126,87 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
       };
     }
 
-    let sortOptions = {};
-    if (sort) {
-      switch (sort.toLowerCase()) {
-        case "newesttooldest":
-          sortOptions = { createdAt: -1 };
-          break;
-        case "oldesttonewest":
-          sortOptions = { createdAt: 1 };
-          break;
-        case "highesttolowest":
-          sortOptions = { amount: -1 };
-          break;
-        case "lowesttohighest":
-          sortOptions = { amount: 1 };
-          break;
-        default:
-          sortOptions = {};
-          break;
-      }
-    } else {
-      sortOptions = { createdAt: -1 };
+    // By transaction date, then when it was added; _id last so the order is
+    // total and pages never repeat or skip a row
+    const SORTS = {
+      newesttooldest: { date: -1, createdAt: -1, _id: -1 },
+      oldesttonewest: { date: 1, createdAt: 1, _id: 1 },
+      highesttolowest: { amount: -1, date: -1, _id: -1 },
+      lowesttohighest: { amount: 1, date: -1, _id: -1 },
+    };
+    const sortOptions = SORTS[sort?.toLowerCase()] || SORTS.newesttooldest;
+
+    // Paging is opt-in: without page/limit/offset everything is returned
+    // (as before). `offset` = rows the client already has, so "load more"
+    // stays exact even after the user deleted rows on screen.
+    const paged = ["page", "limit", "offset"].some(
+      (k) => req.query[k] !== undefined
+    );
+    const page = Number(req.query.page ?? 1);
+    const limit = Number(req.query.limit ?? 25);
+    const offset =
+      req.query.offset !== undefined
+        ? Number(req.query.offset)
+        : (page - 1) * limit;
+    if (
+      paged &&
+      (!Number.isInteger(page) ||
+        page < 1 ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > 100 ||
+        !Number.isInteger(offset) ||
+        offset < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "page must be 1 or more, limit 1-100 and offset 0 or more",
+      });
     }
 
-    const transactions = await Transaction.find(filter).sort(sortOptions);
+    let query = Transaction.find(filter).sort(sortOptions);
+    if (paged) query = query.skip(offset).limit(limit);
+
+    // Count and net total cover every match, not just this page
+    const [transactions, [totals]] = await Promise.all([
+      query,
+      Transaction.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            count: { $sum: 1 },
+            net: {
+              $sum: {
+                $cond: [
+                  { $in: ["$type", ["income", "credit"]] },
+                  "$amount",
+                  { $multiply: ["$amount", -1] },
+                ],
+              },
+            },
+          },
+        },
+      ]),
+    ]);
+    const totalTransactions = totals?.count || 0;
+
     return res.status(200).json({
       success: true,
-      message: "All transactions retrieved successfully",
+      message: "Transactions retrieved successfully",
       data: {
         transactions,
       },
       pagination: {
-        totalTransactions: transactions.length,
+        totalTransactions,
+        net: totals?.net || 0,
+        ...(paged && {
+          page,
+          limit,
+          offset,
+          totalPages: Math.ceil(totalTransactions / limit),
+          hasMore: offset + transactions.length < totalTransactions,
+        }),
       },
     });
   } catch (err) {

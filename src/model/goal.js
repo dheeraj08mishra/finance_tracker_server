@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { isFutureDay } from "../utils/dates.js";
 
 const goalSchema = new Schema(
   {
@@ -33,9 +34,7 @@ const goalSchema = new Schema(
       required: true,
       default: Date.now,
       validate: {
-        validator: function (value) {
-          return value <= new Date();
-        },
+        validator: (value) => !isFutureDay(value),
         message: "Start date cannot be in the future",
       },
     },

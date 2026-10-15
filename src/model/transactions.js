@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import validator from "validator";
+import { isFutureDay, ALL_FREQUENCIES } from "../utils/dates.js";
 
 const { Schema } = mongoose;
 const transactionSchema = new Schema(
@@ -17,6 +18,13 @@ const transactionSchema = new Schema(
     isGoalTransaction: {
       type: Boolean,
       default: false,
+    },
+    // Set on transactions generated from (or that started) a recurring rule;
+    // used to avoid creating the same occurrence twice
+    recurringTransactionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RecurringTransaction",
+      default: null,
     },
     type: {
       type: String,
@@ -46,30 +54,15 @@ const transactionSchema = new Schema(
       validate: [
         {
           validator: function (value) {
-            const now = new Date();
-            const valueDate = new Date(
-              Date.UTC(
-                value.getUTCFullYear(),
-                value.getUTCMonth(),
-                value.getUTCDate()
-              )
-            );
-            const todayUTC = new Date(
-              Date.UTC(
-                now.getUTCFullYear(),
-                now.getUTCMonth(),
-                now.getUTCDate()
-              )
-            );
-            return valueDate <= todayUTC;
-          },
-          message: "Date cannot be in the future",
-        },
-        {
-          validator: function (value) {
             return value instanceof Date && !isNaN(value.getTime());
           },
           message: "Invalid date format",
+        },
+        {
+          // Compared against the latest "today" on Earth, so users ahead of
+          // UTC (e.g. IST after midnight) can record their own today
+          validator: (value) => !isFutureDay(value),
+          message: "Date cannot be in the future",
         },
       ],
     },
@@ -89,7 +82,7 @@ const transactionSchema = new Schema(
     frequency: {
       type: String,
       enum: {
-        values: ["", "minutely", "daily", "weekly", "monthly", "yearly"],
+        values: ["", ...ALL_FREQUENCIES],
         message: "{VALUE} is not a valid frequency",
       },
       default: "",
@@ -103,6 +96,20 @@ const transactionSchema = new Schema(
         message: "Each tag must be at most 20 characters long",
       },
     },
+    // Photo or PDF of the receipt (file in utils/receiptStorage.js)
+    receipt: {
+      type: new Schema(
+        {
+          key: { type: String, required: true },
+          contentType: { type: String, required: true },
+          size: { type: Number, required: true },
+          name: { type: String, default: "receipt", maxlength: 100 },
+          uploadedAt: { type: Date, default: Date.now },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -110,6 +117,14 @@ const transactionSchema = new Schema(
 );
 
 transactionSchema.index({ userId: 1, amount: 1, category: 1, date: -1 });
+// One transaction per recurring rule per occurrence date
+transactionSchema.index(
+  { recurringTransactionId: 1, date: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { recurringTransactionId: { $type: "objectId" } },
+  }
+);
 
 const Transaction = mongoose.model("Transaction", transactionSchema);
 
