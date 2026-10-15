@@ -3,12 +3,13 @@ import userAuth from "../middleware/auth.js";
 const filterRouter = express.Router();
 import Transaction from "../model/transactions.js";
 import { isFutureDay } from "../utils/dates.js";
+import { normalizeTag, isValidTag } from "../utils/tags/normalizeTags.js";
 
 // filter by note
 
 filterRouter.get("/filter", userAuth, async (req, res) => {
   try {
-    const { note, category, fromDate, toDate, sort } = req.query;
+    const { note, category, fromDate, toDate, sort, tag } = req.query;
 
     const cleanedNote = note?.trim();
     if (cleanedNote && cleanedNote.length > 100) {
@@ -88,7 +89,21 @@ filterRouter.get("/filter", userAuth, async (req, res) => {
       cleanedToDate.setHours(23, 59, 59, 999); // Set to end of the day
     }
 
+    // tag=food or tag=food,travel (transactions carrying every one)
+    const tagList =
+      typeof tag === "string" && tag.trim()
+        ? [...new Set(tag.split(",").map(normalizeTag).filter(Boolean))]
+        : [];
+    if (tagList.length > 5 || tagList.some((t) => !isValidTag(t))) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid tag filter" });
+    }
+
     const filter = { userId: req.user._id };
+    if (tagList.length) {
+      filter.tags = tagList.length === 1 ? tagList[0] : { $all: tagList };
+    }
     if (cleanedNote) {
       filter.note = { $regex: cleanedNote, $options: "i" };
     }

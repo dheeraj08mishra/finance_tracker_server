@@ -1,5 +1,7 @@
 import { extractTags } from "../utils/tags/extractTags.js";
 import express from "express";
+import { normalizeTags } from "../utils/tags/normalizeTags.js";
+import { publicError, errorStatus } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import Transaction from "../model/transactions.js";
 
@@ -90,27 +92,39 @@ tagRouter.post("/extractTags/UpdateAll/batch", userAuth, async (req, res) => {
   }
 });
 
+// The user's tags, A-Z (one distinct query, no full scan into memory)
 tagRouter.get("/allTags", userAuth, async (req, res) => {
-  const userId = req.user._id;
   try {
-    const transactions = await Transaction.find({ userId }).select("tags _id");
-    const allTags = new Set();
-    transactions.forEach((txn) => {
-      if (txn.tags && Array.isArray(txn.tags)) {
-        txn.tags.forEach((tag) => {
-          if (tag && tag.trim().length > 0) {
-            allTags.add(tag.trim().toLowerCase());
-          }
-        });
-      }
-    });
+    const tags = await Transaction.distinct("tags", { userId: req.user._id });
     res.status(200).send({
       message: "Tags fetched successfully",
-      data: Array.from(allTags),
+      data: tags.filter(Boolean).sort((a, b) => a.localeCompare(b)),
     });
   } catch (error) {
     console.error("Error fetching tags:", error);
     return res.status(500).send({ error: "Failed to fetch tags" });
   }
 });
+
+// Set a transaction's tags. Allowed for any month: tags are labels, not
+// money, so past months (otherwise read-only) can still be organised.
+tagRouter.patch("/user/transaction/:id/tags", userAuth, async (req, res) => {
+  try {
+    const { tags, error } = normalizeTags(req.body.tags);
+    if (error) return res.status(400).send({ message: error, error });
+    const txn = await Transaction.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user._id },
+      { tags },
+      { new: true, runValidators: true }
+    );
+    if (!txn) {
+      return res.status(404).send({ message: "Transaction not found" });
+    }
+    res.status(200).send({ message: "Tags updated", data: txn });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).send({ message, error: message });
+  }
+});
+
 export default tagRouter;
