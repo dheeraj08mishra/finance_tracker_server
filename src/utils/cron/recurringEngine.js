@@ -1,7 +1,12 @@
 import RecurringTransaction from "../../model/recurringTransaction.js";
 import Transaction from "../../model/transactions.js";
 import { extractTags } from "../tags/extractTags.js";
-import { occurrencesBetween, nextOccurrenceAfter } from "../dates.js";
+import {
+  occurrencesBetween,
+  nextActiveOccurrence,
+  skippedDays,
+  toDayString,
+} from "../dates.js";
 
 const MAX_CATCH_UP = 100; // per rule per run
 
@@ -48,7 +53,9 @@ export async function processDueRecurring({ userId, log = console.log } = {}) {
       rule.tags = await extractTags(rule.note); // returns [] on failure
     }
 
+    const skipped = skippedDays(rule);
     for (const date of dueDates) {
+      if (skipped.has(toDayString(date))) continue; // the user skipped this one
       try {
         await Transaction.create({
           userId: rule.userId,
@@ -75,9 +82,13 @@ export async function processDueRecurring({ userId, log = console.log } = {}) {
     }
 
     if (dueDates.length) rule.lastOccurrence = dueDates[dueDates.length - 1];
-    rule.nextOccurrence = nextOccurrenceAfter(
-      rule.frequency,
-      rule.startDate,
+    // Skips that are now in the past have done their job
+    if (rule.lastOccurrence && rule.skipDates?.length) {
+      const handled = toDayString(rule.lastOccurrence);
+      rule.skipDates = rule.skipDates.filter((d) => toDayString(d) > handled);
+    }
+    rule.nextOccurrence = nextActiveOccurrence(
+      rule,
       rule.lastOccurrence || after
     );
     if (rule.endDate && rule.nextOccurrence > endOfDay(rule.endDate)) {

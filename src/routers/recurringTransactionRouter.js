@@ -3,11 +3,29 @@ import validator from "validator";
 import { publicError, errorStatus } from "../utils/errors.js";
 import RecurringTransaction from "../model/recurringTransaction.js";
 import userAuth from "../middleware/auth.js";
-import { toDayString, nextOccurrenceAfter } from "../utils/dates.js";
+import {
+  toDayString,
+  nextOccurrenceAfter,
+  nextActiveOccurrence,
+  USER_FREQUENCIES,
+} from "../utils/dates.js";
+import { MAX_AMOUNT, parseAmount } from "../utils/money.js";
+
+const endOfDay = (date) => {
+  const d = new Date(date);
+  d.setUTCHours(23, 59, 59, 999);
+  return d;
+};
+
+// Ends the rule if its next date is past its end date
+const applyEndDate = (rule) => {
+  if (rule.endDate && rule.nextOccurrence > endOfDay(rule.endDate)) {
+    rule.isActive = false;
+    rule.nextOccurrence = null;
+  }
+};
 
 const recurringTransactionRouter = express.Router();
-
-const USER_FREQUENCIES = ["daily", "weekly", "monthly", "yearly"];
 
 recurringTransactionRouter.post(
   "/addTransaction",
@@ -122,11 +140,7 @@ recurringTransactionRouter.post(
         rule.lastOccurrence && rule.lastOccurrence > now
           ? rule.lastOccurrence
           : now;
-      const nextOccurrence = nextOccurrenceAfter(
-        rule.frequency,
-        rule.startDate,
-        after
-      );
+      const nextOccurrence = nextActiveOccurrence(rule, after);
       if (rule.endDate && nextOccurrence > rule.endDate) {
         return res
           .status(400)
@@ -187,5 +201,155 @@ recurringTransactionRouter.get("/transactions", userAuth, async (req, res) => {
     res.status(errorStatus(error)).send({ error: publicError(error) });
   }
 });
+
+// Edit a series. Changes apply to future occurrences only; transactions
+// already created stay as they are.
+recurringTransactionRouter.patch(
+  "/transaction/:id",
+  userAuth,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const rule = await RecurringTransaction.findOne({
+        _id: req.params.id,
+        userId,
+      });
+      if (!rule) {
+        return res
+          .status(404)
+          .send({ error: "Recurring transaction not found" });
+      }
+      const { amount, note, category, type, frequency, endDate } = req.body;
+      const bad = (error) => res.status(400).send({ error });
+
+      if (amount !== undefined) {
+        const n = parseAmount(amount);
+        if (n === null)
+          return bad(`Amount must be a positive number up to ${MAX_AMOUNT}`);
+        rule.amount = n;
+      }
+      if (note !== undefined) {
+        if (typeof note !== "string") return bad("Invalid note");
+        if (note.trim() !== rule.note) {
+          rule.note = note.trim();
+          rule.tags = []; // tags come from the note: re-extract next time
+        }
+      }
+      if (type !== undefined) rule.type = type; // checked by the schema
+      if (category !== undefined) rule.category = category;
+
+      let frequencyChanged = false;
+      if (frequency !== undefined && frequency !== rule.frequency) {
+        if (!USER_FREQUENCIES.includes(frequency)) {
+          return bad(
+            `Frequency must be one of: ${USER_FREQUENCIES.join(", ")}`
+          );
+        }
+        rule.frequency = frequency;
+        frequencyChanged = true;
+      }
+      if (endDate !== undefined) {
+        if (endDate === null || endDate === "") {
+          rule.endDate = null;
+        } else {
+          if (!validator.isISO8601(String(endDate)))
+            return bad("Invalid end date");
+          if (toDayString(endDate) < toDayString(rule.startDate)) {
+            return bad("End date can't be before the start date");
+          }
+          rule.endDate = toDayString(endDate);
+        }
+      }
+
+      if (rule.isActive) {
+        if (frequencyChanged) {
+          // Continue from today on the new schedule: never back-fill dates
+          // the old schedule didn't have
+          const today = toDayString(new Date());
+          if (
+            !rule.lastOccurrence ||
+            toDayString(rule.lastOccurrence) < today
+          ) {
+            rule.lastOccurrence = today;
+          }
+        }
+        rule.nextOccurrence = nextActiveOccurrence(
+          rule,
+          rule.lastOccurrence || rule.startDate
+        );
+        applyEndDate(rule);
+      }
+      rule.updatedBy = userId;
+      await rule.save();
+      res.send({ message: "Recurring transaction updated", data: rule });
+    } catch (error) {
+      res.status(errorStatus(error)).send({ error: publicError(error) });
+    }
+  }
+);
+
+// Skip only the next occurrence; the series continues after it
+recurringTransactionRouter.post(
+  "/skipTransaction/:id",
+  userAuth,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const rule = await RecurringTransaction.findOne({
+        _id: req.params.id,
+        userId,
+      });
+      if (!rule) {
+        return res
+          .status(404)
+          .send({ error: "Recurring transaction not found" });
+      }
+      if (!rule.isActive || !rule.nextOccurrence) {
+        return res
+          .status(400)
+          .send({ error: "There is no upcoming payment to skip." });
+      }
+      const skipped = rule.nextOccurrence;
+      rule.skipDates.push(skipped);
+      rule.nextOccurrence = nextActiveOccurrence(rule, skipped);
+      applyEndDate(rule);
+      rule.updatedBy = userId;
+      await rule.save();
+      res.send({
+        message: rule.nextOccurrence
+          ? `Skipped ${toDayString(skipped)}. Next: ${toDayString(rule.nextOccurrence)}.`
+          : `Skipped ${toDayString(skipped)}. That was the last one.`,
+        data: rule,
+        skipped,
+      });
+    } catch (error) {
+      res.status(errorStatus(error)).send({ error: publicError(error) });
+    }
+  }
+);
+
+// Delete a series. Transactions it already created stay in the history.
+recurringTransactionRouter.delete(
+  "/transaction/:id",
+  userAuth,
+  async (req, res) => {
+    try {
+      const rule = await RecurringTransaction.findOneAndDelete({
+        _id: req.params.id,
+        userId: req.user._id,
+      });
+      if (!rule) {
+        return res
+          .status(404)
+          .send({ error: "Recurring transaction not found" });
+      }
+      res.send({
+        message: "Recurring transaction deleted. Past transactions were kept.",
+      });
+    } catch (error) {
+      res.status(errorStatus(error)).send({ error: publicError(error) });
+    }
+  }
+);
 
 export default recurringTransactionRouter;

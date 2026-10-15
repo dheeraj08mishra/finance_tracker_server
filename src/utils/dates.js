@@ -48,13 +48,29 @@ export const MONTH_NAMES = [
 ];
 
 // ---------- recurrence ----------
+// [add, difference, step]: an occurrence is start + k * step units
 const UNITS = {
-  minutely: [addMinutes, differenceInMinutes],
-  daily: [addDays, differenceInDays],
-  weekly: [addWeeks, differenceInWeeks],
-  monthly: [addMonths, differenceInMonths],
-  yearly: [addYears, differenceInYears],
+  minutely: [addMinutes, differenceInMinutes, 1],
+  daily: [addDays, differenceInDays, 1],
+  weekly: [addWeeks, differenceInWeeks, 1],
+  biweekly: [addWeeks, differenceInWeeks, 2],
+  monthly: [addMonths, differenceInMonths, 1],
+  quarterly: [addMonths, differenceInMonths, 3],
+  halfyearly: [addMonths, differenceInMonths, 6],
+  yearly: [addYears, differenceInYears, 1],
 };
+
+// Frequencies users may pick ("minutely" exists only for testing)
+export const USER_FREQUENCIES = [
+  "daily",
+  "weekly",
+  "biweekly",
+  "monthly",
+  "quarterly",
+  "halfyearly",
+  "yearly",
+];
+export const ALL_FREQUENCIES = Object.keys(UNITS);
 
 // Occurrences are always counted from startDate (start + k * step), so a
 // rule starting on the 31st stays on month-end instead of drifting to the 28th.
@@ -67,17 +83,17 @@ export function occurrencesBetween(
 ) {
   const unit = UNITS[frequency];
   if (!unit) return [];
-  const [add, diff] = unit;
+  const [add, diff, step] = unit;
   // Accept strings or Dates (comparing a Date with a string is always false)
   const start = new Date(startDate);
   after = new Date(after);
   until = new Date(until);
   if ([start, after, until].some((d) => isNaN(d))) return [];
   // Jump close to `after` instead of walking from the start
-  let k = Math.max(1, diff(after, start) - 1);
+  let k = Math.max(1, Math.floor(diff(after, start) / step) - 1);
   const result = [];
   while (result.length < limit) {
-    const date = add(start, k);
+    const date = add(start, k * step);
     if (date > until) break;
     if (date > after) result.push(date);
     k++;
@@ -90,3 +106,17 @@ const FAR_FUTURE = new Date(8.64e15);
 // First occurrence strictly after `after`
 export const nextOccurrenceAfter = (frequency, startDate, after) =>
   occurrencesBetween(frequency, startDate, after, FAR_FUTURE, 1)[0] ?? null;
+
+// Calendar days the user chose to skip, as "YYYY-MM-DD"
+export const skippedDays = (rule) =>
+  new Set((rule.skipDates || []).map((d) => toDayString(d)));
+
+// Next occurrence after `after` that the user hasn't skipped
+export function nextActiveOccurrence(rule, after) {
+  const skipped = skippedDays(rule);
+  let next = nextOccurrenceAfter(rule.frequency, rule.startDate, after);
+  for (let i = 0; next && skipped.has(toDayString(next)) && i < 100; i++) {
+    next = nextOccurrenceAfter(rule.frequency, rule.startDate, next);
+  }
+  return next;
+}

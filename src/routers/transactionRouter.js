@@ -7,25 +7,16 @@ import validator from "validator";
 import RecurringTransaction from "../model/recurringTransaction.js";
 import Goal from "../model/goal.js";
 import ExcelJS from "exceljs";
+import { MAX_AMOUNT, parseAmount } from "../utils/money.js";
 import {
   toDayString,
+  USER_FREQUENCIES,
   isFutureDay,
   earliestTodayString,
   latestTodayString,
   nextOccurrenceAfter,
   MONTH_NAMES,
 } from "../utils/dates.js";
-
-// Frequencies users may pick ("minutely" exists only for testing)
-const USER_FREQUENCIES = ["daily", "weekly", "monthly", "yearly"];
-const MAX_AMOUNT = 10000000;
-
-// Positive number with at most 2 decimals, or null
-const parseAmount = (amount) => {
-  const n = Number(amount);
-  if (!Number.isFinite(n) || n <= 0 || n > MAX_AMOUNT) return null;
-  return Math.round(n * 100) / 100;
-};
 
 // Error message for a transaction date, or null if it is allowed.
 // Product rule: only days in the current month (lenient across timezones).

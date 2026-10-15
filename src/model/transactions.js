@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import validator from "validator";
-import { isFutureDay } from "../utils/dates.js";
+import { isFutureDay, ALL_FREQUENCIES } from "../utils/dates.js";
 
 const { Schema } = mongoose;
 const transactionSchema = new Schema(
@@ -82,7 +82,7 @@ const transactionSchema = new Schema(
     frequency: {
       type: String,
       enum: {
-        values: ["", "minutely", "daily", "weekly", "monthly", "yearly"],
+        values: ["", ...ALL_FREQUENCIES],
         message: "{VALUE} is not a valid frequency",
       },
       default: "",
