@@ -1,16 +1,32 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
-import { startServer, newUser, istToday, daysFromUtcToday, utcToday } from "./helpers.js";
+import {
+  startServer,
+  newUser,
+  istToday,
+  daysFromUtcToday,
+  utcToday,
+} from "./helpers.js";
 
 let ctx, client;
 before(async () => {
   ctx = await startServer();
   ({ client } = await newUser(ctx));
 });
-after(async () => { await ctx.stop(); });
+after(async () => {
+  await ctx.stop();
+});
 
-const add = (body) => client.post("/user/addTransaction", { type: "expense", amount: 100, category: "need", date: utcToday(), note: "", ...body });
+const add = (body) =>
+  client.post("/user/addTransaction", {
+    type: "expense",
+    amount: 100,
+    category: "need",
+    date: utcToday(),
+    note: "",
+    ...body,
+  });
 
 test("a user in IST can add a transaction for their own today", async () => {
   const r = await add({ date: istToday() });
@@ -43,7 +59,13 @@ test("users can't create minutely recurring rules", async () => {
 test("edit and delete a transaction", async () => {
   const created = await add({ note: "Lunch" });
   const id = created.data.data._id;
-  const edited = await client.patch(`/user/update/transaction/${id}`, { type: "expense", amount: 250, category: "want", date: utcToday(), note: "Dinner" });
+  const edited = await client.patch(`/user/update/transaction/${id}`, {
+    type: "expense",
+    amount: 250,
+    category: "want",
+    date: utcToday(),
+    note: "Dinner",
+  });
   assert.equal(edited.status, 200);
   assert.equal(edited.data.data.amount, 250);
   assert.equal(edited.data.data.note, "Dinner");
@@ -55,7 +77,11 @@ test("edit and delete a transaction", async () => {
 
 test("invalid id is a 400, unknown id is a 404", async () => {
   assert.equal((await client.get("/user/transactions/not-an-id")).status, 400);
-  assert.equal((await client.del("/user/transaction/delete/6acfc41e2c30edc97f7a1d99")).status, 404);
+  assert.equal(
+    (await client.del("/user/transaction/delete/6acfc41e2c30edc97f7a1d99"))
+      .status,
+    404
+  );
 });
 
 test("a page past the end is empty, not an error", async () => {
@@ -75,14 +101,19 @@ test("users only ever see their own transactions", async () => {
 
 test("month list uses English month names", async () => {
   const r = await client.get("/user/transaction/dataMonthList");
-  const name = new Date().toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+  const name = new Date().toLocaleString("en-US", {
+    month: "long",
+    timeZone: "UTC",
+  });
   assert.equal(r.data.data[0].month, name);
 });
 
 test("Excel export is a real xlsx and notes never become formulas", async () => {
   await add({ note: '=HYPERLINK("http://x") groceries' });
   const [y, m] = utcToday().split("-");
-  const r = await client.get(`/user/transactions/export/excel?month=${Number(m)}&year=${y}`);
+  const r = await client.get(
+    `/user/transactions/export/excel?month=${Number(m)}&year=${y}`
+  );
   assert.equal(r.status, 200);
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(Buffer.from(r.data));

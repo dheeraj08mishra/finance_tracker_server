@@ -33,7 +33,9 @@ export async function processDueRecurring({ userId, log = console.log } = {}) {
   for (const rule of rules) {
     const after = rule.lastOccurrence || rule.startDate;
     const until =
-      rule.endDate && rule.endDate < todayEnd ? endOfDay(rule.endDate) : todayEnd;
+      rule.endDate && rule.endDate < todayEnd
+        ? endOfDay(rule.endDate)
+        : todayEnd;
     const dueDates = occurrencesBetween(
       rule.frequency,
       rule.startDate,
@@ -64,7 +66,10 @@ export async function processDueRecurring({ userId, log = console.log } = {}) {
       } catch (err) {
         // Unique index on (recurringTransactionId, date): already created
         if (err.code !== 11000) {
-          console.error(`[RECURRING] rule=${rule._id} date=${date.toISOString()}:`, err);
+          console.error(
+            `[RECURRING] rule=${rule._id} date=${date.toISOString()}:`,
+            err
+          );
         }
       }
     }

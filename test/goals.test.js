@@ -3,12 +3,18 @@ import assert from "node:assert/strict";
 import { startServer, newUser } from "./helpers.js";
 
 let ctx;
-before(async () => { ctx = await startServer(); });
-after(async () => { await ctx.stop(); });
+before(async () => {
+  ctx = await startServer();
+});
+after(async () => {
+  await ctx.stop();
+});
 
 test("contributions are capped at the target and tracked as goal transactions", async () => {
   const { client } = await newUser(ctx);
-  const goalId = (await client.post("/goal/create", { title: "Bike", targetAmount: 1000 })).data.goal._id;
+  const goalId = (
+    await client.post("/goal/create", { title: "Bike", targetAmount: 1000 })
+  ).data.goal._id;
 
   let r = await client.patch(`/goal/update/${goalId}`, { addAmount: 700 });
   assert.equal(r.data.goal.currentAmount, 700);
@@ -27,15 +33,27 @@ test("contributions are capped at the target and tracked as goal transactions", 
   assert.equal(capped.category, "goal");
 
   await client.del(`/user/transaction/delete/${capped._id}`);
-  const goal = (await client.get("/goal/list")).data.goals.find((g) => g._id === goalId);
-  assert.equal(goal.currentAmount, 700, "deleting a contribution lowers the goal");
+  const goal = (await client.get("/goal/list")).data.goals.find(
+    (g) => g._id === goalId
+  );
+  assert.equal(
+    goal.currentAmount,
+    700,
+    "deleting a contribution lowers the goal"
+  );
   assert.equal(goal.isCompleted, false);
 });
 
 test("bad contribution amounts are rejected", async () => {
   const { client } = await newUser(ctx);
-  const goalId = (await client.post("/goal/create", { title: "Trip", targetAmount: 500 })).data.goal._id;
+  const goalId = (
+    await client.post("/goal/create", { title: "Trip", targetAmount: 500 })
+  ).data.goal._id;
   for (const addAmount of [0, -10, "100", null]) {
-    assert.equal((await client.patch(`/goal/update/${goalId}`, { addAmount })).status, 400, String(addAmount));
+    assert.equal(
+      (await client.patch(`/goal/update/${goalId}`, { addAmount })).status,
+      400,
+      String(addAmount)
+    );
   }
 });

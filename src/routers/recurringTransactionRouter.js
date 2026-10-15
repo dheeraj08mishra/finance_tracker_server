@@ -110,24 +110,33 @@ recurringTransactionRouter.post(
           .send({ error: "Recurring transaction not found" });
       }
       if (rule.isActive) {
-        return res.status(400).send({ error: "Transaction is already active." });
+        return res
+          .status(400)
+          .send({ error: "Transaction is already active." });
       }
 
       // Continue from the next date after today: payments that fell inside
       // the pause are skipped, not back-filled
       const now = new Date();
       const after =
-        rule.lastOccurrence && rule.lastOccurrence > now ? rule.lastOccurrence : now;
-      const nextOccurrence = nextOccurrenceAfter(rule.frequency, rule.startDate, after);
+        rule.lastOccurrence && rule.lastOccurrence > now
+          ? rule.lastOccurrence
+          : now;
+      const nextOccurrence = nextOccurrenceAfter(
+        rule.frequency,
+        rule.startDate,
+        after
+      );
       if (rule.endDate && nextOccurrence > rule.endDate) {
         return res
           .status(400)
           .send({ error: "This recurring transaction has already ended." });
       }
       // Mark the skipped period as handled so the next run doesn't fill it in
-      rule.lastOccurrence = rule.lastOccurrence && rule.lastOccurrence > now
-        ? rule.lastOccurrence
-        : toDayString(now);
+      rule.lastOccurrence =
+        rule.lastOccurrence && rule.lastOccurrence > now
+          ? rule.lastOccurrence
+          : toDayString(now);
       rule.nextOccurrence = nextOccurrence;
       rule.isActive = true;
       rule.updatedBy = userId;

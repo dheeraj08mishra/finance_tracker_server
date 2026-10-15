@@ -8,8 +8,16 @@ export const sendRecurringTransactionEmail = async (
 ) => {
   // Notes are user input: escape before putting them into HTML
   const escapeHtml = (s) =>
-    String(s ?? "").replace(/[&<>"']/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+    String(s ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c]
     );
   const { amount, category, date } = txnDetails;
   const note = escapeHtml(txnDetails.note);

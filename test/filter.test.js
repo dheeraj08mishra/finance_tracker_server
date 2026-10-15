@@ -8,12 +8,23 @@ before(async () => {
   ({ client } = await newUser(ctx));
   // 30 transactions: every 10th is income
   for (let i = 0; i < 30; i++) {
-    await client.post("/user/addTransaction", { type: i % 10 === 0 ? "income" : "expense", amount: 100 + i, category: "need", date: monthStart(), note: `item ${i}` });
+    await client.post("/user/addTransaction", {
+      type: i % 10 === 0 ? "income" : "expense",
+      amount: 100 + i,
+      category: "need",
+      date: monthStart(),
+      note: `item ${i}`,
+    });
   }
 });
-after(async () => { await ctx.stop(); });
+after(async () => {
+  await ctx.stop();
+});
 
-const expectedNet = [...Array(30).keys()].reduce((s, i) => s + (i % 10 === 0 ? 1 : -1) * (100 + i), 0);
+const expectedNet = [...Array(30).keys()].reduce(
+  (s, i) => s + (i % 10 === 0 ? 1 : -1) * (100 + i),
+  0
+);
 
 test("pages of 25 with totals for every match", async () => {
   const p1 = await client.get("/filter?limit=25&offset=0");
@@ -26,7 +37,10 @@ test("pages of 25 with totals for every match", async () => {
   assert.equal(p2.data.data.transactions.length, 5);
   assert.equal(p2.data.pagination.hasMore, false);
   const ids1 = new Set(p1.data.data.transactions.map((t) => t._id));
-  assert.ok(!p2.data.data.transactions.some((t) => ids1.has(t._id)), "no row on both pages");
+  assert.ok(
+    !p2.data.data.transactions.some((t) => ids1.has(t._id)),
+    "no row on both pages"
+  );
 });
 
 test("amount sort works with paging", async () => {

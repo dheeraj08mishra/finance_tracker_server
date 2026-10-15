@@ -90,8 +90,11 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
           "Frequency should not be provided for non-recurring transactions",
       });
     }
-    if (endDate && (!validator.isISO8601(String(endDate)) ||
-        toDayString(endDate) < toDayString(date))) {
+    if (
+      endDate &&
+      (!validator.isISO8601(String(endDate)) ||
+        toDayString(endDate) < toDayString(date))
+    ) {
       return res.status(400).json({
         success: false,
         message: "End date must be a valid date on or after the start date",
@@ -178,8 +181,15 @@ transactionRouter.get("/user/transactions", userAuth, async (req, res) => {
     // No limit = everything (History page relies on this until it paginates)
     const page = req.query.page === undefined ? 1 : Number(req.query.page);
     const limit =
-      req.query.limit === undefined ? totalTransactions : Number(req.query.limit);
-    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {
+      req.query.limit === undefined
+        ? totalTransactions
+        : Number(req.query.limit);
+    if (
+      !Number.isInteger(page) ||
+      page < 1 ||
+      !Number.isInteger(limit) ||
+      limit < 1
+    ) {
       return res.status(400).json({
         success: false,
         message: "page and limit must be positive integers",
@@ -304,7 +314,11 @@ transactionRouter.get(
     try {
       const months = await Transaction.aggregate([
         { $match: { userId: req.user._id } },
-        { $group: { _id: { year: { $year: "$date" }, month: { $month: "$date" } } } },
+        {
+          $group: {
+            _id: { year: { $year: "$date" }, month: { $month: "$date" } },
+          },
+        },
         { $sort: { "_id.year": -1, "_id.month": -1 } },
       ]);
       // English names: the frontend maps them back to month numbers
@@ -357,40 +371,53 @@ transactionRouter.patch(
       }
 
       // Commits on success, rolls back and ends the session on any error
-      const transaction = await mongoose.connection.transaction(async (session) => {
-        const txn = await Transaction.findOne({ _id: id, userId: user._id }).session(session);
-        if (!txn) return null;
+      const transaction = await mongoose.connection.transaction(
+        async (session) => {
+          const txn = await Transaction.findOne({
+            _id: id,
+            userId: user._id,
+          }).session(session);
+          if (!txn) return null;
 
-        if (txn.isGoalTransaction && txn.goalId) {
-          // A goal contribution stays a goal expense; only amount/note/date change
-          type = "expense";
-          category = "goal";
-          const goal = await Goal.findOne({ _id: txn.goalId, userId: user._id }).session(session);
-          if (goal) {
-            goal.currentAmount = Math.max(0, goal.currentAmount + amountNum - txn.amount);
-            goal.checkGoalStatus();
-            await goal.save({ session });
+          if (txn.isGoalTransaction && txn.goalId) {
+            // A goal contribution stays a goal expense; only amount/note/date change
+            type = "expense";
+            category = "goal";
+            const goal = await Goal.findOne({
+              _id: txn.goalId,
+              userId: user._id,
+            }).session(session);
+            if (goal) {
+              goal.currentAmount = Math.max(
+                0,
+                goal.currentAmount + amountNum - txn.amount
+              );
+              goal.checkGoalStatus();
+              await goal.save({ session });
+            }
           }
+
+          txn.type = type;
+          txn.amount = amountNum;
+          txn.note = note;
+          txn.category = category;
+          txn.date = toDayString(date);
+          await txn.save({ session });
+
+          // Editing the first transaction of a series updates the series too
+          await RecurringTransaction.updateOne(
+            { parentTransactionId: txn._id, userId: user._id, isActive: true },
+            { type, amount: amountNum, note, category, updatedBy: user._id },
+            { session, runValidators: true }
+          );
+          return txn;
         }
-
-        txn.type = type;
-        txn.amount = amountNum;
-        txn.note = note;
-        txn.category = category;
-        txn.date = toDayString(date);
-        await txn.save({ session });
-
-        // Editing the first transaction of a series updates the series too
-        await RecurringTransaction.updateOne(
-          { parentTransactionId: txn._id, userId: user._id, isActive: true },
-          { type, amount: amountNum, note, category, updatedBy: user._id },
-          { session, runValidators: true }
-        );
-        return txn;
-      });
+      );
 
       if (!transaction) {
-        return res.status(404).json({ success: false, message: "Transaction not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Transaction not found" });
       }
       res.status(200).json({
         success: true,
@@ -399,7 +426,9 @@ transactionRouter.patch(
       });
     } catch (error) {
       const message = publicError(error);
-      res.status(errorStatus(error)).json({ success: false, message, error: message });
+      res
+        .status(errorStatus(error))
+        .json({ success: false, message, error: message });
     }
   }
 );
@@ -413,33 +442,43 @@ transactionRouter.delete(
       const user = req.user;
       const { id } = req.params;
 
-      const transaction = await mongoose.connection.transaction(async (session) => {
-        const txn = await Transaction.findOne({ _id: id, userId: user._id }).session(session);
-        if (!txn) return null;
+      const transaction = await mongoose.connection.transaction(
+        async (session) => {
+          const txn = await Transaction.findOne({
+            _id: id,
+            userId: user._id,
+          }).session(session);
+          if (!txn) return null;
 
-        if (txn.isGoalTransaction && txn.goalId) {
-          const goal = await Goal.findOne({ _id: txn.goalId, userId: user._id }).session(session);
-          if (goal) {
-            goal.currentAmount = Math.max(0, goal.currentAmount - txn.amount);
-            goal.checkGoalStatus();
-            await goal.save({ session });
+          if (txn.isGoalTransaction && txn.goalId) {
+            const goal = await Goal.findOne({
+              _id: txn.goalId,
+              userId: user._id,
+            }).session(session);
+            if (goal) {
+              goal.currentAmount = Math.max(0, goal.currentAmount - txn.amount);
+              goal.checkGoalStatus();
+              await goal.save({ session });
+            }
           }
+
+          // Deleting the first transaction of a series stops the series
+          // (it already disappeared from the Recurring page but kept running)
+          await RecurringTransaction.updateOne(
+            { parentTransactionId: txn._id, userId: user._id },
+            { isActive: false, nextOccurrence: null, updatedBy: user._id },
+            { session }
+          );
+
+          await Transaction.deleteOne({ _id: txn._id }).session(session);
+          return txn;
         }
-
-        // Deleting the first transaction of a series stops the series
-        // (it already disappeared from the Recurring page but kept running)
-        await RecurringTransaction.updateOne(
-          { parentTransactionId: txn._id, userId: user._id },
-          { isActive: false, nextOccurrence: null, updatedBy: user._id },
-          { session }
-        );
-
-        await Transaction.deleteOne({ _id: txn._id }).session(session);
-        return txn;
-      });
+      );
 
       if (!transaction) {
-        return res.status(404).json({ success: false, message: "Transaction not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Transaction not found" });
       }
       res.status(200).json({
         success: true,
@@ -448,7 +487,9 @@ transactionRouter.delete(
       });
     } catch (error) {
       const message = publicError(error);
-      res.status(errorStatus(error)).json({ success: false, message, error: message });
+      res
+        .status(errorStatus(error))
+        .json({ success: false, message, error: message });
     }
   }
 );

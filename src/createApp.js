@@ -31,7 +31,9 @@ export default function createApp() {
   // Uptime checks: no auth, not rate limited. 503 when the DB is down.
   app.get("/health", (req, res) => {
     const dbUp = mongoose.connection.readyState === 1;
-    res.status(dbUp ? 200 : 503).json({ status: dbUp ? "ok" : "degraded", db: dbUp ? "up" : "down" });
+    res
+      .status(dbUp ? 200 : 503)
+      .json({ status: dbUp ? "ok" : "degraded", db: dbUp ? "up" : "down" });
   });
 
   app.use(apiLimiter);

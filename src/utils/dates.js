@@ -33,8 +33,18 @@ export const dayRange = (date) => {
 };
 
 export const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 // ---------- recurrence ----------
@@ -48,7 +58,13 @@ const UNITS = {
 
 // Occurrences are always counted from startDate (start + k * step), so a
 // rule starting on the 31st stays on month-end instead of drifting to the 28th.
-export function occurrencesBetween(frequency, startDate, after, until, limit = 100) {
+export function occurrencesBetween(
+  frequency,
+  startDate,
+  after,
+  until,
+  limit = 100
+) {
   const unit = UNITS[frequency];
   if (!unit) return [];
   const [add, diff] = unit;

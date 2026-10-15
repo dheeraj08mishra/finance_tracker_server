@@ -3,7 +3,15 @@ import globals from "globals";
 
 export default [
   // Local one-off scripts that are gitignored (never committed)
-  { ignores: ["node_modules/", "*.json", "fakeusergenerate.js", "transactionGenerate.js", "scriptFetchFirebase.js"] },
+  {
+    ignores: [
+      "node_modules/",
+      "*.json",
+      "fakeusergenerate.js",
+      "transactionGenerate.js",
+      "scriptFetchFirebase.js",
+    ],
+  },
   js.configs.recommended,
   {
     files: ["**/*.js"],
@@ -13,7 +21,10 @@ export default [
       globals: { ...globals.node },
     },
     rules: {
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_|^next$", caughtErrors: "none" }],
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_|^next$", caughtErrors: "none" },
+      ],
     },
   },
 ];

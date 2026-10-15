@@ -49,9 +49,15 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
     }
 
     // Every field is optional: validate only what was sent
-    for (const [field, value] of [["First name", firstName], ["Last name", lastName]]) {
+    for (const [field, value] of [
+      ["First name", firstName],
+      ["Last name", lastName],
+    ]) {
       if (value === undefined) continue;
-      if (typeof value !== "string" || !validator.isLength(value.trim(), { min: 3, max: 20 })) {
+      if (
+        typeof value !== "string" ||
+        !validator.isLength(value.trim(), { min: 3, max: 20 })
+      ) {
         return bad(`${field} must be between 3 and 20 characters`);
       }
     }
@@ -68,7 +74,10 @@ profileRouter.patch("/user/profile/update", userAuth, async (req, res) => {
       // https image links only (no javascript:, data: or plain http)
       if (
         typeof photo !== "string" ||
-        !validator.isURL(photo, { protocols: ["https"], require_protocol: true })
+        !validator.isURL(photo, {
+          protocols: ["https"],
+          require_protocol: true,
+        })
       ) {
         return bad("Photo must be an https:// link");
       }
@@ -118,7 +127,10 @@ profileRouter.patch("/user/password", userAuth, async (req, res) => {
     const bad = (message, status = 400) =>
       res.status(status).json({ message, error: message });
 
-    if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
+    if (
+      typeof currentPassword !== "string" ||
+      typeof newPassword !== "string"
+    ) {
       return bad("Current and new password are required.");
     }
     if (!validator.isStrongPassword(newPassword)) {
@@ -139,10 +151,15 @@ profileRouter.patch("/user/password", userAuth, async (req, res) => {
       return bad("Current password is incorrect.", 403);
     }
     // No reuse of the last PASSWORD_HISTORY passwords (current one included)
-    const recentHashes = [user.password, ...(user.passwordHistory || [])].slice(0, PASSWORD_HISTORY);
+    const recentHashes = [user.password, ...(user.passwordHistory || [])].slice(
+      0,
+      PASSWORD_HISTORY
+    );
     for (const hash of recentHashes) {
       if (await bcrypt.compare(newPassword, hash)) {
-        return bad(`You can't reuse any of your last ${PASSWORD_HISTORY} passwords.`);
+        return bad(
+          `You can't reuse any of your last ${PASSWORD_HISTORY} passwords.`
+        );
       }
     }
 

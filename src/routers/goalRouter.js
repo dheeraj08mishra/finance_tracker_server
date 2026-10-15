@@ -77,7 +77,11 @@ goalRouter.patch("/goal/update/:id", userAuth, async (req, res) => {
   try {
     const goalId = req.params.id;
     const { addAmount } = req.body;
-    if (typeof addAmount !== "number" || !Number.isFinite(addAmount) || addAmount <= 0) {
+    if (
+      typeof addAmount !== "number" ||
+      !Number.isFinite(addAmount) ||
+      addAmount <= 0
+    ) {
       return res
         .status(400)
         .json({ error: "amount must be a positive number" });
@@ -85,14 +89,20 @@ goalRouter.patch("/goal/update/:id", userAuth, async (req, res) => {
 
     // Commits on success, rolls back and ends the session on any error
     const result = await mongoose.connection.transaction(async (session) => {
-      const goal = await Goal.findOne({ _id: goalId, userId: req.user._id }).session(session);
+      const goal = await Goal.findOne({
+        _id: goalId,
+        userId: req.user._id,
+      }).session(session);
       if (!goal) return { status: 404, body: { error: "Goal not found" } };
       if (goal.currentAmount >= goal.targetAmount) {
         return { status: 400, body: { error: "Goal is already completed" } };
       }
 
       // Only what is still needed is taken; the rest stays with the user
-      const contribution = Math.min(addAmount, goal.targetAmount - goal.currentAmount);
+      const contribution = Math.min(
+        addAmount,
+        goal.targetAmount - goal.currentAmount
+      );
       goal.currentAmount += contribution;
       goal.checkGoalStatus();
 

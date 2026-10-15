@@ -6,7 +6,8 @@ const { Schema } = mongoose;
 
 // Old accounts were given this placeholder, which no longer exists.
 // Treat it (and empty values) as "no photo".
-const DEAD_DEFAULT_PHOTO = "https://s3.amazonaws.com/37assets/svn/765-default-avatar.png";
+const DEAD_DEFAULT_PHOTO =
+  "https://s3.amazonaws.com/37assets/svn/765-default-avatar.png";
 const normalizePhoto = (v) => (!v || v === DEAD_DEFAULT_PHOTO ? null : v);
 
 const userSchema = new Schema(
@@ -134,9 +135,13 @@ userSchema.pre("save", async function (next) {
 
 userSchema.methods.getJWT = function () {
   if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET not set");
-  return jwt.sign({ userId: this._id, tv: this.tokenVersion || 0 }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRATION || "1d",
-  });
+  return jwt.sign(
+    { userId: this._id, tv: this.tokenVersion || 0 },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRATION || "1d",
+    }
+  );
 };
 
 // Compare password

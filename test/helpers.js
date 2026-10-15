@@ -41,7 +41,9 @@ export function makeClient(url) {
     const set = res.headers.get("set-cookie");
     if (set) cookie = set.split(";")[0];
     const type = res.headers.get("content-type") || "";
-    const data = type.includes("json") ? await res.json() : await res.arrayBuffer();
+    const data = type.includes("json")
+      ? await res.json()
+      : await res.arrayBuffer();
     return { status: res.status, data, headers: res.headers };
   };
   return {
@@ -58,14 +60,25 @@ export async function newUser(ctx, password = "Testuser1@") {
   const client = ctx.client();
   seq++;
   const email = `user${Date.now()}${seq}@example.com`;
-  const phoneNumber = String(9000000000 + ((Date.now() + seq * 7919) % 999999999));
-  const r = await client.post("/signup", { firstName: "Test", lastName: "User", email, password, phoneNumber });
-  if (r.status !== 201) throw new Error(`signup failed: ${r.status} ${JSON.stringify(r.data)}`);
+  const phoneNumber = String(
+    9000000000 + ((Date.now() + seq * 7919) % 999999999)
+  );
+  const r = await client.post("/signup", {
+    firstName: "Test",
+    lastName: "User",
+    email,
+    password,
+    phoneNumber,
+  });
+  if (r.status !== 201)
+    throw new Error(`signup failed: ${r.status} ${JSON.stringify(r.data)}`);
   return { client, email, password };
 }
 
 // Calendar days as "YYYY-MM-DD"
 export const utcToday = () => new Date().toISOString().slice(0, 10);
-export const istToday = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
-export const daysFromUtcToday = (n) => new Date(Date.now() + n * 86400e3).toISOString().slice(0, 10);
+export const istToday = () =>
+  new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+export const daysFromUtcToday = (n) =>
+  new Date(Date.now() + n * 86400e3).toISOString().slice(0, 10);
 export const monthStart = () => utcToday().slice(0, 8) + "01";

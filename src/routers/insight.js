@@ -23,7 +23,10 @@ const MonthList = {
 
 // Monthly income / spending / savings for a user (optionally one year).
 // Goal contributions are savings, not spending; "credit" counts as income.
-async function monthlySummary(userId, { year, sortYears = -1, sortMonths = 1 } = {}) {
+async function monthlySummary(
+  userId,
+  { year, sortYears = -1, sortMonths = 1 } = {}
+) {
   const months = await Transaction.aggregate([
     {
       $match: {
@@ -40,12 +43,19 @@ async function monthlySummary(userId, { year, sortYears = -1, sortMonths = 1 } =
       $group: {
         _id: { year: { $year: "$date" }, month: { $month: "$date" } },
         income: {
-          $sum: { $cond: [{ $in: ["$type", ["income", "credit"]] }, "$amount", 0] },
+          $sum: {
+            $cond: [{ $in: ["$type", ["income", "credit"]] }, "$amount", 0],
+          },
         },
         expense: {
           $sum: {
             $cond: [
-              { $and: [{ $eq: ["$type", "expense"] }, { $ne: ["$category", "goal"] }] },
+              {
+                $and: [
+                  { $eq: ["$type", "expense"] },
+                  { $ne: ["$category", "goal"] },
+                ],
+              },
               "$amount",
               0,
             ],

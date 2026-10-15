@@ -15,7 +15,9 @@ tagRouter.post("/extractTags/:id", userAuth, async (req, res) => {
     const note = (txnDetails.note || "").trim();
     if (!note) {
       // Nothing to tag; always answer so the client doesn't hang
-      return res.status(200).send({ message: "No note to tag", data: txnDetails });
+      return res
+        .status(200)
+        .send({ message: "No note to tag", data: txnDetails });
     }
     txnDetails.tags = await extractTags(note);
     await txnDetails.save();
@@ -55,7 +57,11 @@ tagRouter.post("/extractTags/UpdateAll/batch", userAuth, async (req, res) => {
         return { id: txn._id, status: "success" };
       } catch (err) {
         console.error(`Tag extraction failed for txn=${txn._id}:`, err);
-        return { id: txn._id, status: "failed", error: "Tag extraction failed" };
+        return {
+          id: txn._id,
+          status: "failed",
+          error: "Tag extraction failed",
+        };
       }
     };
     const results = [];

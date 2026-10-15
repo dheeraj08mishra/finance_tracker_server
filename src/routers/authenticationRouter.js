@@ -16,8 +16,10 @@ authenticationRouter.post("/signup", async (req, res) => {
   try {
     const { firstName, lastName, password, phoneNumber } = req.body;
     const requiredStrings = [firstName, lastName, password, req.body.email];
-    if (requiredStrings.some((v) => typeof v !== "string") ||
-      (phoneNumber !== undefined && typeof phoneNumber !== "string")) {
+    if (
+      requiredStrings.some((v) => typeof v !== "string") ||
+      (phoneNumber !== undefined && typeof phoneNumber !== "string")
+    ) {
       return res.status(400).json({ message: "All fields are required." });
     }
 

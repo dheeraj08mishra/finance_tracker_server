@@ -9,7 +9,9 @@ dotenv.config();
 await mongoose.connect(process.env.MONGODB_URI);
 try {
   const { rules, created } = await processDueRecurring();
-  console.log(`Recurring sync completed: ${rules} rule(s), ${created} created.`);
+  console.log(
+    `Recurring sync completed: ${rules} rule(s), ${created} created.`
+  );
 } catch (err) {
   console.error("Recurring sync failed:", err);
   process.exitCode = 1;
