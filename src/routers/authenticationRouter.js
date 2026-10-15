@@ -3,7 +3,13 @@ import User from "../model/user.js";
 const authenticationRouter = express.Router();
 import validator from "validator";
 import jwt from "jsonwebtoken";
-import { startSession, endSession } from "../utils/sessions.js";
+import {
+  startSession,
+  endSession,
+  refreshSession,
+  endSessionByRefreshToken,
+  requestToken,
+} from "../utils/sessions.js";
 import { clearAuthCookie } from "../utils/security.js";
 import userAuth from "../middleware/auth.js";
 
@@ -82,11 +88,12 @@ authenticationRouter.post("/signup", async (req, res) => {
     });
 
     await newUser.save(); /// save the new user to the database
-    // Generate JWT token
-    await startSession(req, res, newUser);
+    // website: login cookie · mobile app: tokens in the response
+    const { tokens } = await startSession(req, res, newUser);
     await recordSignIn(newUser._id);
     // Respond with success message and user data
     res.status(201).json({
+      ...(tokens && { tokens }),
       message: `Welcome ${firstName} ${lastName}, your account was created successfully`,
       user: {
         email: validator.normalizeEmail(newUser.email),
@@ -123,9 +130,10 @@ authenticationRouter.post("/login", async (req, res) => {
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
-    await startSession(req, res, user);
+    const { tokens } = await startSession(req, res, user);
     await recordSignIn(user._id);
     res.status(200).json({
+      ...(tokens && { tokens }),
       message: `Welcome back ${user.firstName} ${user.lastName}`,
       user: {
         email: user.email,
@@ -150,9 +158,15 @@ authenticationRouter.post("/login", async (req, res) => {
 
 authenticationRouter.post("/logout", async (req, res) => {
   try {
-    // Forget this device's session too (an invalid token just clears)
+    // Forget this device's session too (an invalid token just clears).
+    // The app may send its refresh token, which works after the access
+    // token has expired.
+    await endSessionByRefreshToken(req.body?.refreshToken);
     try {
-      const { sid } = jwt.verify(req.cookies.token, process.env.JWT_SECRET);
+      const { sid } = jwt.verify(
+        requestToken(req).token,
+        process.env.JWT_SECRET
+      );
       await endSession(sid);
     } catch {
       /* no or expired token: nothing to end */
@@ -187,6 +201,18 @@ authenticationRouter.get("/me", userAuth, async (req, res) => {
   } catch (err) {
     console.error("Error in /me route:", err);
     res.status(401).json({ message: "Unauthorized" });
+  }
+});
+
+// Mobile app: new access + refresh tokens for the current refresh token
+authenticationRouter.post("/auth/refresh", async (req, res) => {
+  try {
+    const r = await refreshSession(req.body?.refreshToken);
+    if (r.error) return res.status(r.status).json({ message: r.error });
+    res.json({ tokens: r.tokens });
+  } catch (error) {
+    console.error("Error during token refresh:", error);
+    res.status(500).json({ message: "Couldn't refresh the session" });
   }
 });
 

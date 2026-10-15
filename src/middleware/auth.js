@@ -1,16 +1,18 @@
 import User from "../model/user.js";
 import jwt from "jsonwebtoken";
-import { findSession } from "../utils/sessions.js";
+import { findSession, requestToken } from "../utils/sessions.js";
 const userAuth = async (req, res, next) => {
   try {
-    const token = req.cookies.token;
+    // website: cookie · mobile app: Authorization: Bearer <access token>
+    const { token, bearer } = requestToken(req);
     if (!token) {
       return res
         .status(401)
         .json({ message: "Unauthorized: No token provided" });
     }
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded) {
+    // app tokens always belong to a session
+    if (!decoded || (bearer && !decoded.sid)) {
       return res.status(401).json({ message: "Unauthorized: Invalid token" });
     }
     const user = await User.findById(decoded.userId).select("-password");

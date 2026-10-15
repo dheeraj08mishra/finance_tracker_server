@@ -45,7 +45,15 @@ export default function createApp() {
   app.use(cookieParser()); // Middleware to parse cookies
   app.use(
     cors({
-      origin: process.env.CLIENT_ORIGIN || "http://localhost:1234", // frontend URL
+      // the website, plus any app origins in CORS_ORIGINS (comma-separated,
+      // e.g. "capacitor://localhost,https://localhost" for the mobile shell)
+      origin: [
+        process.env.CLIENT_ORIGIN || "http://localhost:1234",
+        ...(process.env.CORS_ORIGINS || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ],
       credentials: true, // Allow credentials (cookies) to be sent
     })
   );

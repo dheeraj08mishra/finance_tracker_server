@@ -64,6 +64,8 @@ export function makeClient(url) {
     put: (p, b) => call("PUT", p, b),
     del: (p, b) => call("DELETE", p, b),
     upload: (p, buf, headers) => call("PUT", p, buf, headers),
+    // any method with extra headers (e.g. the mobile app's Bearer token)
+    send: (method, p, body, headers) => call(method, p, body, headers),
   };
 }
 

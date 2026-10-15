@@ -214,14 +214,15 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// sid: the Session this login belongs to (see utils/sessions.js)
-userSchema.methods.getJWT = function (sid) {
+// sid: the Session this login belongs to (see utils/sessions.js).
+// expiresIn: shorter for the mobile app's access tokens.
+userSchema.methods.getJWT = function (sid, expiresIn) {
   if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET not set");
   return jwt.sign(
     { userId: this._id, tv: this.tokenVersion || 0, ...(sid && { sid }) },
     process.env.JWT_SECRET,
     {
-      expiresIn: process.env.JWT_EXPIRATION || "1d",
+      expiresIn: expiresIn || process.env.JWT_EXPIRATION || "1d",
     }
   );
 };

@@ -155,9 +155,10 @@ profileRouter.patch("/user/password", userAuth, async (req, res) => {
 
     // other devices: signed out; this one: a fresh session
     await endAllSessions(user._id);
-    await startSession(req, res, user);
+    const { tokens } = await startSession(req, res, user);
     res.status(200).json({
       message: "Password changed. Other devices have been signed out.",
+      ...(tokens && { tokens }), // the app's fresh tokens
     });
   } catch (error) {
     const message = publicError(error);
@@ -236,6 +237,7 @@ profileRouter.get("/user/sessions", userAuth, async (req, res) => {
     res.json({
       data: sessions.map((s) => ({
         _id: s._id,
+        kind: s.kind || "web",
         device: s.device,
         ip: s.ip,
         signedInAt: s.createdAt,

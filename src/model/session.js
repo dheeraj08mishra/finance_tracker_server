@@ -10,7 +10,18 @@ const sessionSchema = new Schema(
       required: true,
       index: true,
     },
+    // "web": login cookie · "app": mobile app with access + refresh tokens
+    kind: { type: String, enum: ["web", "app"], default: "web" },
     device: { type: String, default: "Unknown device", maxlength: 80 },
+    // App sessions only: sha256 of the current refresh token (rotated on
+    // every use) and of the one before, to spot a stolen token being reused
+    refreshHash: { type: String, default: null, index: { sparse: true } },
+    previousRefreshHash: {
+      type: String,
+      default: null,
+      index: { sparse: true },
+    },
+    rotatedAt: { type: Date, default: null },
     ip: { type: String, default: "", maxlength: 64 },
     lastSeenAt: { type: Date, default: Date.now },
     // Removed by MongoDB once the login itself has expired
