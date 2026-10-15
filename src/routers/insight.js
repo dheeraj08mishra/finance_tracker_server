@@ -252,6 +252,113 @@ insightRouter.post("/anomalyDetection", userAuth, async (req, res) => {
   }
 });
 
+// One year against another. Totals and categories only cover finished
+// months that both years have data for, so a year that started in May (or
+// a half-done October) isn't "down 40%" against a full one.
+const validYear = (y) => Number.isInteger(y) && y >= 1970 && y <= 2100;
+const EXPENSE_CATEGORIES = ["need", "want", "investment", "other"];
+
+insightRouter.get("/compare", userAuth, async (req, res) => {
+  try {
+    const year = Number(req.query.year);
+    const against =
+      req.query.against === undefined ? year - 1 : Number(req.query.against);
+    if (!validYear(year) || !validYear(against) || year === against) {
+      return res
+        .status(400)
+        .json({ message: "Pick two different, valid years" });
+    }
+    const userId = req.user._id;
+    const [current, previous] = await Promise.all([
+      monthlySummary(userId, { year }),
+      monthlySummary(userId, { year: against }),
+    ]);
+    const now = new Date();
+    // the current month isn't over yet: leave it out of the totals
+    const lastMonth =
+      Math.max(year, against) === now.getUTCFullYear() ? now.getUTCMonth() : 12;
+    const has = (rows, m) => rows.some((r) => r.monthNumber === m);
+    const period = Array.from({ length: lastMonth }, (_, i) => i + 1).filter(
+      (m) => has(current, m) && has(previous, m)
+    );
+
+    const zero = { income: 0, expense: 0, savings: 0 };
+    const pick = (rows, m) => {
+      const r = rows.find((x) => x.monthNumber === m);
+      return r
+        ? { income: r.income, expense: r.expense, savings: r.savings }
+        : zero;
+    };
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      monthNumber: i + 1,
+      month: MonthList[i + 1],
+      current: pick(current, i + 1),
+      previous: pick(previous, i + 1),
+    }));
+    const sum = (key) =>
+      months
+        .filter((m) => period.includes(m.monthNumber))
+        .reduce(
+          (t, m) => ({
+            income: t.income + m[key].income,
+            expense: t.expense + m[key].expense,
+            savings: t.savings + m[key].savings,
+          }),
+          zero
+        );
+
+    // Spending per category over the same months
+    const byCategory = period.length
+      ? await Transaction.aggregate([
+          {
+            $match: {
+              userId,
+              type: "expense",
+              category: { $in: EXPENSE_CATEGORIES },
+              date: {
+                $gte: new Date(Date.UTC(Math.min(year, against), 0, 1)),
+                $lt: new Date(Date.UTC(Math.max(year, against) + 1, 0, 1)),
+              },
+            },
+          },
+          {
+            $project: {
+              category: 1,
+              amount: 1,
+              y: { $year: "$date" },
+              m: { $month: "$date" },
+            },
+          },
+          { $match: { y: { $in: [year, against] }, m: { $in: period } } },
+          {
+            $group: {
+              _id: { category: "$category", y: "$y" },
+              total: { $sum: "$amount" },
+            },
+          },
+        ])
+      : [];
+    const categoryTotal = (category, y) =>
+      byCategory.find((c) => c._id.category === category && c._id.y === y)
+        ?.total || 0;
+
+    res.json({
+      year,
+      against,
+      period,
+      months,
+      totals: { current: sum("current"), previous: sum("previous") },
+      categories: EXPENSE_CATEGORIES.map((category) => ({
+        category,
+        current: categoryTotal(category, year),
+        previous: categoryTotal(category, against),
+      })),
+    });
+  } catch (error) {
+    res.status(errorStatus(error)).json({ message: publicError(error) });
+  }
+});
+
 // "At this pace you'll have ₹X left at month end" (current month)
 insightRouter.get("/forecast", userAuth, async (req, res) => {
   try {

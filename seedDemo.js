@@ -1,4 +1,5 @@
-// Creates (or resets) a demo account with ~6 months of realistic data.
+// Creates (or resets) a demo account with realistic data from Jan 2025
+// to now (so Insights can compare 2026 with 2025).
 // Usage: MONGODB_URI=mongodb://127.0.0.1:27018/finance_tracker?replicaSet=testset node seedDemo.js
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -39,14 +40,12 @@ export const DEMO_ADMIN = {
 // Noon UTC so the date is the same day in every timezone
 const day = (y, m, d) => new Date(Date.UTC(y, m - 1, d, 12));
 
+// Jan 2025 → Oct 2026. Goals and recurring rules cover the last 6 months.
 const MONTHS = [
-  [2026, 5],
-  [2026, 6],
-  [2026, 7],
-  [2026, 8],
-  [2026, 9],
-  [2026, 10],
+  ...Array.from({ length: 12 }, (_, i) => [2025, i + 1]),
+  ...Array.from({ length: 10 }, (_, i) => [2026, i + 1]),
 ];
+const RECENT = MONTHS.slice(-6);
 const LAST_DAY_THIS_MONTH = 12; // keep current-month data in the past
 
 // Small deterministic variation so months don't look identical
@@ -56,6 +55,8 @@ const vary = (base, seed) =>
 function monthTransactions(userId, y, m, i) {
   const cap = (d) =>
     y === 2026 && m === 10 ? Math.min(d, LAST_DAY_THIS_MONTH) : d;
+  // 2025: before the raise and the rent increase
+  const lastYear = y === 2025;
   const t = (type, amount, category, d, note, tags, extra = {}) => ({
     userId,
     type,
@@ -64,15 +65,27 @@ function monthTransactions(userId, y, m, i) {
     date: day(y, m, cap(d)),
     note,
     tags,
-    ...extra,
+    // recurring rules start in May 2026
+    ...(y === 2026 && m >= 5 && extra),
   });
 
   const list = [
-    t("income", 85000, "other", 1, "Monthly salary", ["salary", "income"]),
-    t("expense", 22000, "need", 2, "House rent", ["rent", "housing"], {
-      isRecurring: true,
-      frequency: "monthly",
-    }),
+    t("income", lastYear ? 75000 : 85000, "other", 1, "Monthly salary", [
+      "salary",
+      "income",
+    ]),
+    t(
+      "expense",
+      lastYear ? 20000 : 22000,
+      "need",
+      2,
+      "House rent",
+      ["rent", "housing"],
+      {
+        isRecurring: true,
+        frequency: "monthly",
+      }
+    ),
     t(
       "expense",
       10000,
@@ -140,6 +153,19 @@ function monthTransactions(userId, y, m, i) {
         "dining",
       ])
     );
+  }
+  if (lastYear) {
+    if (m === 11) {
+      // Diwali: last year's big month
+      list.push(
+        t("expense", 18000, "want", 1, "Diwali shopping and gifts", [
+          "festival",
+          "gifts",
+        ]),
+        t("income", 12000, "other", 28, "Diwali bonus", ["bonus", "income"])
+      );
+    }
+    return list;
   }
   if (m === 6) {
     list.push(
@@ -223,9 +249,9 @@ async function seed() {
   ]);
   // Steady monthly saving, so the August trip stands out as the spike
   const contributions = [
-    ...MONTHS.map(([y, m]) => [goals[0], 15000, y, m, 3]),
-    ...MONTHS.map(([y, m]) => [goals[1], 8000, y, m, 11]),
-    ...MONTHS.slice(0, 4).map(([y, m]) => [goals[2], 10000, y, m, 10]),
+    ...RECENT.map(([y, m]) => [goals[0], 15000, y, m, 3]),
+    ...RECENT.map(([y, m]) => [goals[1], 8000, y, m, 11]),
+    ...RECENT.slice(0, 4).map(([y, m]) => [goals[2], 10000, y, m, 10]),
   ];
   await Transaction.insertMany(
     contributions.map(([g, amount, y, m, d]) => ({
@@ -250,7 +276,12 @@ async function seed() {
 
   // Recurring rules, linked to their first transaction
   const firstOf = (note) =>
-    saved.find((s) => s.note === note && s.date.getUTCMonth() === 4);
+    saved.find(
+      (s) =>
+        s.note === note &&
+        s.date.getUTCFullYear() === 2026 &&
+        s.date.getUTCMonth() === 4
+    );
   const recurring = [
     ["House rent", 22000, "need", 2, ["rent", "housing"]],
     ["Mutual fund SIP", 10000, "investment", 5, ["sip", "mutual fund"]],
