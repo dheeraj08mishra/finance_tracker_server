@@ -6,6 +6,7 @@ import User from "./src/model/user.js";
 import Transaction from "./src/model/transactions.js";
 import RecurringTransaction from "./src/model/recurringTransaction.js";
 import Goal from "./src/model/goal.js";
+import Feedback from "./src/model/feedback.js";
 
 dotenv.config();
 
@@ -23,6 +24,16 @@ export const DEMO = {
   lastName: "user",
   phoneNumber: "9000000001",
   gender: "other",
+};
+
+// Local admin account for trying the read-only admin pages
+export const DEMO_ADMIN = {
+  email: "admin@budgetwise.app",
+  password: "Admin@1234",
+  firstName: "admin",
+  lastName: "user",
+  phoneNumber: "9000000002",
+  role: "admin",
 };
 
 // Noon UTC so the date is the same day in every timezone
@@ -170,6 +181,7 @@ async function seed() {
       Transaction.deleteMany({ userId: existing._id }),
       RecurringTransaction.deleteMany({ userId: existing._id }),
       Goal.deleteMany({ userId: existing._id }),
+      Feedback.deleteMany({ UserId: existing._id }),
     ]);
     await existing.deleteOne();
   }
@@ -264,7 +276,31 @@ async function seed() {
   );
 
   const count = await Transaction.countDocuments({ userId });
+  // Admin account (no data of its own), plus a little feedback to read
+  await User.deleteOne({ email: DEMO_ADMIN.email });
+  await User.create(DEMO_ADMIN);
+  // Local only: drop feedback left behind by accounts that no longer exist
+  await Feedback.deleteMany({ UserId: { $nin: await User.distinct("_id") } });
+  await Feedback.insertMany([
+    {
+      UserId: userId,
+      feedbackType: "feature",
+      feedbackText: "Would love budgets per category with alerts.",
+    },
+    {
+      UserId: userId,
+      feedbackType: "suggestion",
+      feedbackText: "The dark mode looks great. Maybe a weekly summary email?",
+    },
+    {
+      UserId: userId,
+      feedbackType: "bug",
+      feedbackText: "Export took a while on a slow connection.",
+    },
+  ]);
+
   console.log(`Demo user ready: ${DEMO.email} / ${DEMO.password}`);
+  console.log(`Admin ready:     ${DEMO_ADMIN.email} / ${DEMO_ADMIN.password}`);
   console.log(
     `userId=${userId}  transactions=${count}  goals=${goals.length}  recurring=${recurring.length}`
   );

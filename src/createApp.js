@@ -15,6 +15,7 @@ import goalRouter from "./routers/goalRouter.js";
 import manualUpdateRecurringRouter from "./routers/manualUpdateRecurring.js";
 import insightRouter from "./routers/insight.js";
 import passwordResetRouter from "./routers/passwordResetRouter.js";
+import adminRouter from "./routers/adminRouter.js";
 import { apiLimiter, authLimiter, aiLimiter } from "./utils/security.js";
 
 // Builds the Express app without connecting to the database or starting
@@ -69,5 +70,6 @@ export default function createApp() {
   app.use("/", goalRouter); // Goal management routes
   app.use("/", manualUpdateRecurringRouter); // Manual update for recurring transactions
   app.use("/insights", insightRouter); // Insight routes
+  app.use("/admin", adminRouter); // Read-only admin (admins only)
   return app;
 }

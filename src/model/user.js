@@ -80,6 +80,13 @@ const userSchema = new Schema(
         message: (props) => `${props.value} is not a valid phone number!`,
       },
     },
+    // "admin" can read the admin pages (stats, feedback). Granted only with
+    // the make-admin script, never through the API.
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
     // Bumped on password change; tokens carrying an older version are
     // rejected (see auth middleware), which signs out every other session
     tokenVersion: {
