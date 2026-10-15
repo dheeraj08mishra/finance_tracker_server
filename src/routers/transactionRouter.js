@@ -8,6 +8,7 @@ import RecurringTransaction from "../model/recurringTransaction.js";
 import Goal from "../model/goal.js";
 import ExcelJS from "exceljs";
 import { MAX_AMOUNT, parseAmount } from "../utils/money.js";
+import { budgetStatus } from "../utils/budgets.js";
 import {
   toDayString,
   USER_FREQUENCIES,
@@ -129,11 +130,22 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
     await newTransaction.save();
     if (newRecurringTransaction) await newRecurringTransaction.save();
 
+    // Close to (80%+) or over the category's budget for that month?
+    let budgetAlert = null;
+    if (type === "expense" && user.budgets?.[category]) {
+      const [y, m] = inputDate.split("-").map(Number);
+      const row = (await budgetStatus(user, y, m)).find(
+        (r) => r.category === category
+      );
+      if (row && row.level !== "ok") budgetAlert = row;
+    }
+
     res.status(201).json({
       success: true,
       message: "Transaction added successfully",
       data: newTransaction,
       recurring: newRecurringTransaction,
+      budgetAlert,
     });
   } catch (error) {
     const message = publicError(error);

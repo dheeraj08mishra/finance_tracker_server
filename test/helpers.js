@@ -50,6 +50,7 @@ export function makeClient(url) {
     get: (p) => call("GET", p),
     post: (p, b) => call("POST", p, b),
     patch: (p, b) => call("PATCH", p, b),
+    put: (p, b) => call("PUT", p, b),
     del: (p) => call("DELETE", p),
   };
 }

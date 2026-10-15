@@ -80,6 +80,20 @@ const userSchema = new Schema(
         message: (props) => `${props.value} is not a valid phone number!`,
       },
     },
+    // Monthly spending limit per category (null = no budget)
+    budgets: {
+      _id: false,
+      type: new Schema(
+        {
+          need: { type: Number, min: 0, default: null },
+          want: { type: Number, min: 0, default: null },
+          investment: { type: Number, min: 0, default: null },
+          other: { type: Number, min: 0, default: null },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
     // "admin" can read the admin pages (stats, feedback). Granted only with
     // the make-admin script, never through the API.
     role: {
