@@ -97,6 +97,18 @@ const userSchema = new Schema(
       default: [],
       select: false,
     },
+    // Forgot-password link: only a SHA-256 of the token is stored, so a
+    // database leak can't be used to reset passwords. Single use.
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
     // No photo by default: the app shows the user's initials
     photo: {
       type: String,
@@ -115,6 +127,8 @@ const userSchema = new Schema(
       transform: function (doc, ret) {
         delete ret.password;
         delete ret.passwordHistory;
+        delete ret.passwordResetTokenHash;
+        delete ret.passwordResetExpires;
         ret.photo = normalizePhoto(ret.photo);
         delete ret.passwordChangedAt;
         delete ret.tokenVersion;

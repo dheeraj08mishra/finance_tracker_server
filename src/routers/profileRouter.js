@@ -4,10 +4,7 @@ import userAuth from "../middleware/auth.js";
 import User from "../model/user.js";
 import validator from "validator";
 import { setAuthCookie } from "../utils/security.js";
-import bcrypt from "bcrypt";
-
-// How many recent passwords (including the current one) can't be reused
-const PASSWORD_HISTORY = 3;
+import { newPasswordProblem, setNewPassword } from "../utils/passwords.js";
 const profileRouter = express.Router();
 
 profileRouter.post("/user/profile", userAuth, async (req, res) => {
@@ -133,15 +130,8 @@ profileRouter.patch("/user/password", userAuth, async (req, res) => {
     ) {
       return bad("Current and new password are required.");
     }
-    if (!validator.isStrongPassword(newPassword)) {
-      return bad(
-        "New password must be at least 8 characters with upper, lower, number and symbol."
-      );
-    }
-    // The schema trims passwords, which would silently change this one
-    if (newPassword !== newPassword.trim()) {
-      return bad("New password can't start or end with a space.");
-    }
+    const problem = newPasswordProblem(newPassword);
+    if (problem) return bad(problem);
 
     // includes the hash; history is select:false so ask for it
     const user = await User.findById(req.user._id).select("+passwordHistory");
@@ -150,24 +140,8 @@ profileRouter.patch("/user/password", userAuth, async (req, res) => {
     if (!(await user.comparePassword(currentPassword))) {
       return bad("Current password is incorrect.", 403);
     }
-    // No reuse of the last PASSWORD_HISTORY passwords (current one included)
-    const recentHashes = [user.password, ...(user.passwordHistory || [])].slice(
-      0,
-      PASSWORD_HISTORY
-    );
-    for (const hash of recentHashes) {
-      if (await bcrypt.compare(newPassword, hash)) {
-        return bad(
-          `You can't reuse any of your last ${PASSWORD_HISTORY} passwords.`
-        );
-      }
-    }
-
-    // Keep the outgoing hash so it counts as "recent" from now on
-    user.passwordHistory = recentHashes.slice(0, PASSWORD_HISTORY - 1);
-    user.password = newPassword; // hashed by the pre-save hook
-    user.passwordChangedAt = new Date();
-    user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidates all old tokens
+    const reused = await setNewPassword(user, newPassword);
+    if (reused) return bad(reused);
     await user.save();
 
     setAuthCookie(res, user.getJWT());

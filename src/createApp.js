@@ -14,6 +14,7 @@ import tagRouter from "./routers/tagRoutes.js";
 import goalRouter from "./routers/goalRouter.js";
 import manualUpdateRecurringRouter from "./routers/manualUpdateRecurring.js";
 import insightRouter from "./routers/insight.js";
+import passwordResetRouter from "./routers/passwordResetRouter.js";
 import { apiLimiter, authLimiter, aiLimiter } from "./utils/security.js";
 
 // Builds the Express app without connecting to the database or starting
@@ -46,9 +47,19 @@ export default function createApp() {
     })
   );
   // Password guessing: login, signup and change-password share the strict limit
-  app.use(["/login", "/signup", "/user/password"], authLimiter);
+  app.use(
+    [
+      "/login",
+      "/signup",
+      "/user/password",
+      "/password/forgot",
+      "/password/reset",
+    ],
+    authLimiter
+  );
   app.use("/extractTags", aiLimiter);
   app.use("/", authenticationRouter); // Authentication routes
+  app.use("/", passwordResetRouter); // Forgot / reset password
   app.use("/", profileRouter); // Profile routes
   app.use("/", transactionRouter); // Transaction routes
   app.use("/", filterRouter); // Filter routes

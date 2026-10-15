@@ -81,3 +81,37 @@ Date: ${formattedDate}
     throw err;
   }
 };
+
+// Forgot-password email with a single-use link (expires in 30 minutes)
+export const sendPasswordResetEmail = async (toAddress, firstName, link) => {
+  const name = String(firstName || "there").replace(/[^\p{L} ]/gu, "");
+  const command = new SendEmailCommand({
+    Destination: { ToAddresses: [toAddress] },
+    Message: {
+      Subject: { Charset: "UTF-8", Data: "Reset your BudgetWise password" },
+      Body: {
+        Html: {
+          Charset: "UTF-8",
+          Data: `<p>Hi ${name},</p>
+<p>Someone (hopefully you) asked to reset your BudgetWise password.</p>
+<p><a href="${link}">Choose a new password</a></p>
+<p>This link works once and expires in 30 minutes. If you didn't ask for it, ignore this email: your password stays the same.</p>
+<p>— BudgetWise</p>`,
+        },
+        Text: {
+          Charset: "UTF-8",
+          Data: `Hi ${name},
+
+Someone (hopefully you) asked to reset your BudgetWise password.
+Choose a new password: ${link}
+
+This link works once and expires in 30 minutes. If you didn't ask for it, ignore this email: your password stays the same.
+
+— BudgetWise`,
+        },
+      },
+    },
+    Source: process.env.FROM_EMAIL,
+  });
+  return sesClient.send(command);
+};
