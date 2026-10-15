@@ -12,6 +12,11 @@ const emailVariants = (email) => {
   return [...new Set([validator.normalizeEmail(lower), lower])];
 };
 
+// Remember when the user last signed in (shown to admins). Best effort:
+// a failure here must never block signing in.
+const recordSignIn = (userId) =>
+  User.updateOne({ _id: userId }, { lastLoginAt: new Date() }).catch(() => {});
+
 authenticationRouter.post("/signup", async (req, res) => {
   try {
     const { firstName, lastName, password, phoneNumber } = req.body;
@@ -78,6 +83,7 @@ authenticationRouter.post("/signup", async (req, res) => {
     // Generate JWT token
     const token = newUser.getJWT();
     setAuthCookie(res, token);
+    await recordSignIn(newUser._id);
     // Respond with success message and user data
     res.status(201).json({
       message: `Welcome ${firstName} ${lastName}, your account was created successfully`,
@@ -117,6 +123,7 @@ authenticationRouter.post("/login", async (req, res) => {
     }
     const token = user.getJWT();
     setAuthCookie(res, token);
+    await recordSignIn(user._id);
     res.status(200).json({
       message: `Welcome back ${user.firstName} ${user.lastName}`,
       user: {

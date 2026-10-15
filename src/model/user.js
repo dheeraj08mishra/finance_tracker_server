@@ -114,6 +114,11 @@ const userSchema = new Schema(
       default: () => new Map(),
       select: false,
     },
+    // Set on each sign-in (shown to admins as "last sign-in")
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
     // "admin" can read the admin pages (stats, feedback). Granted only with
     // the make-admin script, never through the API.
     role: {
