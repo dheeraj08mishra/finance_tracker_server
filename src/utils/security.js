@@ -31,7 +31,12 @@ const limiter = (windowMinutes, limit, message) =>
   });
 
 // Whole API: generous, stops scripted abuse
-export const apiLimiter = limiter(15, 300, "Too many requests, slow down.");
+// API_RATE_LIMIT overrides the request count (e.g. higher for tests)
+export const apiLimiter = limiter(
+  15,
+  Number(process.env.API_RATE_LIMIT) || 300,
+  "Too many requests, slow down."
+);
 
 // Login/signup: slows down password guessing
 // AUTH_RATE_LIMIT overrides the attempt count (e.g. higher for local tests)
