@@ -62,7 +62,7 @@ export function makeClient(url) {
     post: (p, b) => call("POST", p, b),
     patch: (p, b) => call("PATCH", p, b),
     put: (p, b) => call("PUT", p, b),
-    del: (p) => call("DELETE", p),
+    del: (p, b) => call("DELETE", p, b),
     upload: (p, buf, headers) => call("PUT", p, buf, headers),
   };
 }

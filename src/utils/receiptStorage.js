@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { mkdir, writeFile, unlink, rm } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 
@@ -45,6 +45,12 @@ export async function putReceipt(userId, buf, ext) {
 }
 
 export const streamReceipt = (key) => createReadStream(fileFor(key));
+
+// Every receipt of one user (account deleted)
+export async function removeUserReceipts(userId) {
+  const dir = fileFor(`${userId}/x`).slice(0, -2); // the user's folder
+  await rm(dir, { recursive: true, force: true });
+}
 
 // Best effort: a missing file is already gone
 export async function removeReceipt(key) {

@@ -55,6 +55,7 @@ export default function createApp() {
       "/login",
       "/signup",
       "/user/password",
+      "/user/account",
       "/password/forgot",
       "/password/reset",
     ],

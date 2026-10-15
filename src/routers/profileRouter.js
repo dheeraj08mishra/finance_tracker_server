@@ -8,6 +8,12 @@ import { USER_FREQUENCIES } from "../utils/dates.js";
 import mongoose from "mongoose";
 import Session from "../model/session.js";
 import { startSession, endAllSessions } from "../utils/sessions.js";
+import { clearAuthCookie } from "../utils/security.js";
+import Transaction from "../model/transactions.js";
+import RecurringTransaction from "../model/recurringTransaction.js";
+import Goal from "../model/goal.js";
+import Feedback from "../model/feedback.js";
+import { removeUserReceipts } from "../utils/receiptStorage.js";
 const profileRouter = express.Router();
 
 profileRouter.post("/user/profile", userAuth, async (req, res) => {
@@ -291,5 +297,41 @@ profileRouter.post(
     }
   }
 );
+
+// Delete the account and everything in it. Needs the password again.
+// (App stores require in-app account deletion; so does good practice.)
+profileRouter.delete("/user/account", userAuth, async (req, res) => {
+  try {
+    const { password } = req.body || {};
+    if (typeof password !== "string" || !password) {
+      return res
+        .status(400)
+        .json({ message: "Enter your password to delete your account." });
+    }
+    const user = await User.findById(req.user._id);
+    // 403, not 401: a 401 would read as an expired session in the app
+    if (!(await user.comparePassword(password))) {
+      return res.status(403).json({ message: "Password is incorrect." });
+    }
+    const userId = user._id;
+    await mongoose.connection.transaction(async (session) => {
+      await Transaction.deleteMany({ userId }, { session });
+      await RecurringTransaction.deleteMany({ userId }, { session });
+      await Goal.deleteMany({ userId }, { session });
+      await Feedback.deleteMany({ UserId: userId }, { session });
+      await Session.deleteMany({ userId }, { session });
+      await User.deleteOne({ _id: userId }, { session });
+    });
+    // files last: the data is gone even if this step fails
+    await removeUserReceipts(userId).catch((err) =>
+      console.error("[ACCOUNT] receipt folder not removed:", err)
+    );
+    clearAuthCookie(res);
+    res.json({ message: "Your account and all its data were deleted." });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({ message, error: message });
+  }
+});
 
 export default profileRouter;
