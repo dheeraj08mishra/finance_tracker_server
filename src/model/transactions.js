@@ -96,6 +96,20 @@ const transactionSchema = new Schema(
         message: "Each tag must be at most 20 characters long",
       },
     },
+    // Photo or PDF of the receipt (file in utils/receiptStorage.js)
+    receipt: {
+      type: new Schema(
+        {
+          key: { type: String, required: true },
+          contentType: { type: String, required: true },
+          size: { type: Number, required: true },
+          name: { type: String, default: "receipt", maxlength: 100 },
+          uploadedAt: { type: Date, default: Date.now },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   {
     timestamps: true,

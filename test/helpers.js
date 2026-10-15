@@ -2,11 +2,16 @@
 // the real Express app on a random port. Nothing touches a real database.
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose from "mongoose";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 process.env.JWT_SECRET ||= "test-secret";
 process.env.OPENAI_API_KEY = "disabled-in-tests"; // tag extraction returns []
 process.env.AUTH_RATE_LIMIT = "10000";
 process.env.API_RATE_LIMIT = "100000";
+// receipts go to a throwaway folder, never the real uploads/
+process.env.RECEIPTS_DIR ||= mkdtempSync(path.join(tmpdir(), "bw-receipts-"));
 
 export async function startServer() {
   const replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -32,11 +37,17 @@ export async function startServer() {
 // fetch with a one-cookie jar: each client is a separate browser/device
 export function makeClient(url) {
   let cookie = "";
-  const call = async (method, path, body) => {
+  // a Buffer body is sent as-is (file uploads), anything else as JSON
+  const call = async (method, path, body, headers = {}) => {
+    const raw = Buffer.isBuffer(body);
     const res = await fetch(url + path, {
       method,
-      headers: { "content-type": "application/json", cookie },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: {
+        "content-type": raw ? "application/octet-stream" : "application/json",
+        cookie,
+        ...headers,
+      },
+      body: raw ? body : body === undefined ? undefined : JSON.stringify(body),
     });
     const set = res.headers.get("set-cookie");
     if (set) cookie = set.split(";")[0];
@@ -52,6 +63,7 @@ export function makeClient(url) {
     patch: (p, b) => call("PATCH", p, b),
     put: (p, b) => call("PUT", p, b),
     del: (p) => call("DELETE", p),
+    upload: (p, buf, headers) => call("PUT", p, buf, headers),
   };
 }
 

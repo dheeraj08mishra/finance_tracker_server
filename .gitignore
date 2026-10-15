@@ -19,3 +19,4 @@ fakeusergenerate.js
 serviceAccountKey.json
 transactionGenerate.js
 .env.*
+uploads/

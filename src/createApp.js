@@ -11,6 +11,7 @@ import filterRouter from "./routers/filterRouter.js";
 import recurringTransactionRouter from "./routers/recurringTransactionRouter.js";
 import feedbackRouter from "./routers/feedbackRouter.js";
 import tagRouter from "./routers/tagRoutes.js";
+import receiptRouter from "./routers/receiptRouter.js";
 import goalRouter from "./routers/goalRouter.js";
 import manualUpdateRecurringRouter from "./routers/manualUpdateRecurring.js";
 import insightRouter from "./routers/insight.js";
@@ -68,6 +69,7 @@ export default function createApp() {
   app.use("/recurring", recurringTransactionRouter); // Recurring transaction routes
   app.use("/", feedbackRouter); // Feedback routes
   app.use("/", tagRouter); // Tag extraction routes
+  app.use("/", receiptRouter); // Receipt photo / PDF per transaction
   app.use("/", goalRouter); // Goal management routes
   app.use("/", manualUpdateRecurringRouter); // Manual update for recurring transactions
   app.use("/insights", insightRouter); // Insight routes

@@ -10,6 +10,7 @@ import ExcelJS from "exceljs";
 import { MAX_AMOUNT, parseAmount } from "../utils/money.js";
 import { budgetStatus } from "../utils/budgets.js";
 import { notifyBudgetAlert } from "../utils/notifications.js";
+import { removeReceipt } from "../utils/receiptStorage.js";
 import {
   toDayString,
   USER_FREQUENCIES,
@@ -486,6 +487,7 @@ transactionRouter.delete(
           .status(404)
           .json({ success: false, message: "Transaction not found" });
       }
+      await removeReceipt(transaction.receipt?.key);
       res.status(200).json({
         success: true,
         message: "Transaction deleted successfully",
