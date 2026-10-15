@@ -2,6 +2,7 @@ import express from "express";
 import { publicError, errorStatus } from "../utils/errors.js";
 import Transaction from "../model/transactions.js";
 import userAuth from "../middleware/auth.js";
+import { monthForecast } from "../utils/forecast.js";
 
 const insightRouter = new express.Router();
 
@@ -248,6 +249,15 @@ insightRouter.post("/anomalyDetection", userAuth, async (req, res) => {
     res
       .status(errorStatus(error))
       .json({ error: "Something went wrong", details: publicError(error) });
+  }
+});
+
+// "At this pace you'll have ₹X left at month end" (current month)
+insightRouter.get("/forecast", userAuth, async (req, res) => {
+  try {
+    res.json(await monthForecast(req.user._id));
+  } catch (error) {
+    res.status(errorStatus(error)).json({ message: publicError(error) });
   }
 });
 
