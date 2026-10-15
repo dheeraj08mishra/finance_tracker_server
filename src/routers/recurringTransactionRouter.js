@@ -10,6 +10,7 @@ import {
   USER_FREQUENCIES,
 } from "../utils/dates.js";
 import { MAX_AMOUNT, parseAmount } from "../utils/money.js";
+import { recurringInsights } from "../utils/recurringInsights.js";
 
 const endOfDay = (date) => {
   const d = new Date(date);
@@ -164,6 +165,15 @@ recurringTransactionRouter.post(
     }
   }
 );
+
+// Committed per month, payments in the next 30 days, price changes
+recurringTransactionRouter.get("/insights", userAuth, async (req, res) => {
+  try {
+    res.json(await recurringInsights(req.user._id));
+  } catch (error) {
+    res.status(errorStatus(error)).send({ error: publicError(error) });
+  }
+});
 
 // All of the user's recurring rules, active and paused
 recurringTransactionRouter.get("/transactions", userAuth, async (req, res) => {

@@ -97,7 +97,8 @@ function monthTransactions(userId, y, m, i) {
     ),
     t(
       "expense",
-      649,
+      // price went up in August: shows on the Recurring page
+      y === 2026 && m < 8 ? 499 : 649,
       "want",
       7,
       "Netflix subscription",
@@ -287,7 +288,7 @@ async function seed() {
     ["Mutual fund SIP", 10000, "investment", 5, ["sip", "mutual fund"]],
     ["Netflix subscription", 649, "want", 7, ["streaming", "subscription"]],
   ];
-  await RecurringTransaction.insertMany(
+  const rules = await RecurringTransaction.insertMany(
     recurring.map(([note, amount, category, d, tags]) => ({
       userId,
       type: "expense",
@@ -305,6 +306,19 @@ async function seed() {
       parentTransactionId: firstOf(note)._id,
     }))
   );
+
+  // Link each rule's payments to it (as the app does), May 2026 onwards
+  for (const rule of rules) {
+    await Transaction.updateMany(
+      {
+        userId,
+        note: rule.note,
+        isRecurring: true,
+        date: { $gte: day(2026, 5, 1) },
+      },
+      { recurringTransactionId: rule._id }
+    );
+  }
 
   const count = await Transaction.countDocuments({ userId });
   // Admin account (no data of its own), plus a little feedback to read
