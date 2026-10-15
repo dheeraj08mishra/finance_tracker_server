@@ -4,6 +4,7 @@ import validator from "validator";
 import User from "../model/user.js";
 import { publicError, errorStatus } from "../utils/errors.js";
 import { newPasswordProblem, setNewPassword } from "../utils/passwords.js";
+import { endAllSessions } from "../utils/sessions.js";
 import { sendPasswordResetEmail } from "../utils/autoEmail/mailer.js";
 
 const passwordResetRouter = express.Router();
@@ -73,6 +74,7 @@ passwordResetRouter.post("/password/reset", async (req, res) => {
     const reused = await setNewPassword(user, newPassword);
     if (reused) return bad(reused);
     await user.save();
+    await endAllSessions(user._id);
     res.status(200).json({
       message: "Password reset. Sign in with your new password.",
     });

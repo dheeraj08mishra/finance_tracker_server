@@ -2,7 +2,9 @@ import express from "express";
 import User from "../model/user.js";
 const authenticationRouter = express.Router();
 import validator from "validator";
-import { setAuthCookie, clearAuthCookie } from "../utils/security.js";
+import jwt from "jsonwebtoken";
+import { startSession, endSession } from "../utils/sessions.js";
+import { clearAuthCookie } from "../utils/security.js";
 import userAuth from "../middleware/auth.js";
 
 // Signup stores the normalized form (gmail dots removed); older records may be
@@ -81,8 +83,7 @@ authenticationRouter.post("/signup", async (req, res) => {
 
     await newUser.save(); /// save the new user to the database
     // Generate JWT token
-    const token = newUser.getJWT();
-    setAuthCookie(res, token);
+    await startSession(req, res, newUser);
     await recordSignIn(newUser._id);
     // Respond with success message and user data
     res.status(201).json({
@@ -122,8 +123,7 @@ authenticationRouter.post("/login", async (req, res) => {
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
-    const token = user.getJWT();
-    setAuthCookie(res, token);
+    await startSession(req, res, user);
     await recordSignIn(user._id);
     res.status(200).json({
       message: `Welcome back ${user.firstName} ${user.lastName}`,
@@ -148,8 +148,15 @@ authenticationRouter.post("/login", async (req, res) => {
   }
 });
 
-authenticationRouter.post("/logout", (req, res) => {
+authenticationRouter.post("/logout", async (req, res) => {
   try {
+    // Forget this device's session too (an invalid token just clears)
+    try {
+      const { sid } = jwt.verify(req.cookies.token, process.env.JWT_SECRET);
+      await endSession(sid);
+    } catch {
+      /* no or expired token: nothing to end */
+    }
     clearAuthCookie(res);
     res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {

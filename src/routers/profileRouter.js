@@ -3,9 +3,11 @@ import { publicError, errorStatus } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
 import User from "../model/user.js";
 import validator from "validator";
-import { setAuthCookie } from "../utils/security.js";
 import { newPasswordProblem, setNewPassword } from "../utils/passwords.js";
 import { USER_FREQUENCIES } from "../utils/dates.js";
+import mongoose from "mongoose";
+import Session from "../model/session.js";
+import { startSession, endAllSessions } from "../utils/sessions.js";
 const profileRouter = express.Router();
 
 profileRouter.post("/user/profile", userAuth, async (req, res) => {
@@ -145,7 +147,9 @@ profileRouter.patch("/user/password", userAuth, async (req, res) => {
     if (reused) return bad(reused);
     await user.save();
 
-    setAuthCookie(res, user.getJWT());
+    // other devices: signed out; this one: a fresh session
+    await endAllSessions(user._id);
+    await startSession(req, res, user);
     res.status(200).json({
       message: "Password changed. Other devices have been signed out.",
     });
@@ -216,5 +220,76 @@ profileRouter.patch("/user/preferences", userAuth, async (req, res) => {
     res.status(errorStatus(error)).json({ message, error: message });
   }
 });
+
+// Where this account is signed in, newest activity first
+profileRouter.get("/user/sessions", userAuth, async (req, res) => {
+  try {
+    const sessions = await Session.find({ userId: req.user._id })
+      .sort({ lastSeenAt: -1 })
+      .lean();
+    res.json({
+      data: sessions.map((s) => ({
+        _id: s._id,
+        device: s.device,
+        ip: s.ip,
+        signedInAt: s.createdAt,
+        lastSeenAt: s.lastSeenAt,
+        current: String(s._id) === String(req.sessionId),
+      })),
+      // signed in before sessions existed: not listed, can't be ended here
+      currentListed: !!req.sessionId,
+    });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({ message, error: message });
+  }
+});
+
+// Sign out one other device
+profileRouter.delete("/user/sessions/:id", userAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid session" });
+    }
+    if (id === String(req.sessionId)) {
+      return res
+        .status(400)
+        .json({ message: "Use Sign out to sign out this device." });
+    }
+    const r = await Session.deleteOne({ _id: id, userId: req.user._id });
+    if (!r.deletedCount) {
+      return res.status(404).json({ message: "Session not found" });
+    }
+    res.json({ message: "That device was signed out." });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({ message, error: message });
+  }
+});
+
+// Sign out every device except this one
+profileRouter.post(
+  "/user/sessions/sign-out-others",
+  userAuth,
+  async (req, res) => {
+    try {
+      const r = await Session.deleteMany({
+        userId: req.user._id,
+        ...(req.sessionId && { _id: { $ne: req.sessionId } }),
+      });
+      res.json({
+        message:
+          r.deletedCount === 1
+            ? "1 other device was signed out."
+            : `${r.deletedCount} other devices were signed out.`,
+        count: r.deletedCount,
+      });
+    } catch (error) {
+      const message = publicError(error);
+      res.status(errorStatus(error)).json({ message, error: message });
+    }
+  }
+);
 
 export default profileRouter;

@@ -214,10 +214,11 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-userSchema.methods.getJWT = function () {
+// sid: the Session this login belongs to (see utils/sessions.js)
+userSchema.methods.getJWT = function (sid) {
   if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET not set");
   return jwt.sign(
-    { userId: this._id, tv: this.tokenVersion || 0 },
+    { userId: this._id, tv: this.tokenVersion || 0, ...(sid && { sid }) },
     process.env.JWT_SECRET,
     {
       expiresIn: process.env.JWT_EXPIRATION || "1d",

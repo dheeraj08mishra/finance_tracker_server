@@ -1,5 +1,6 @@
 import User from "../model/user.js";
 import jwt from "jsonwebtoken";
+import { findSession } from "../utils/sessions.js";
 const userAuth = async (req, res, next) => {
   try {
     const token = req.cookies.token;
@@ -23,6 +24,14 @@ const userAuth = async (req, res, next) => {
         .status(401)
         .json({ message: "Your password was changed. Please sign in again." });
     }
+    // Signed out from another device (Profile → Signed-in devices).
+    // Tokens from before sessions existed have no sid; they expire in a day.
+    if (decoded.sid && !(await findSession(decoded.sid, user._id))) {
+      return res
+        .status(401)
+        .json({ message: "This device was signed out. Please sign in again." });
+    }
+    req.sessionId = decoded.sid || null;
     req.user = user; // Attach user to request object
     next();
   } catch (error) {
