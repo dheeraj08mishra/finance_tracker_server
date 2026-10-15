@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "make-admin": "node makeAdmin.js"
+    "make-admin": "node makeAdmin.js",
+    "send-summaries": "node sendSummaries.js"
   },
   "author": "dheeraj mishra",
   "license": "ISC",

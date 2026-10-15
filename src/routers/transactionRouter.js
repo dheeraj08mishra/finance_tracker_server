@@ -9,6 +9,7 @@ import Goal from "../model/goal.js";
 import ExcelJS from "exceljs";
 import { MAX_AMOUNT, parseAmount } from "../utils/money.js";
 import { budgetStatus } from "../utils/budgets.js";
+import { notifyBudgetAlert } from "../utils/notifications.js";
 import {
   toDayString,
   USER_FREQUENCIES,
@@ -138,6 +139,8 @@ transactionRouter.post("/user/addTransaction", userAuth, async (req, res) => {
         (r) => r.category === category
       );
       if (row && row.level !== "ok") budgetAlert = row;
+      // Email too, once per level per category per month (if enabled)
+      if (budgetAlert) await notifyBudgetAlert(user, budgetAlert, y, m);
     }
 
     res.status(201).json({

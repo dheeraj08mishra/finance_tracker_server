@@ -1,6 +1,8 @@
 import RecurringTransaction from "../../model/recurringTransaction.js";
 import Transaction from "../../model/transactions.js";
 import { extractTags } from "../tags/extractTags.js";
+import User from "../../model/user.js";
+import { checkBudget } from "../notifications.js";
 import {
   occurrencesBetween,
   nextActiveOccurrence,
@@ -54,6 +56,7 @@ export async function processDueRecurring({ userId, log = console.log } = {}) {
     }
 
     const skipped = skippedDays(rule);
+    const createdMonths = new Set(); // "YYYY-MM" of what this rule added
     for (const date of dueDates) {
       if (skipped.has(toDayString(date))) continue; // the user skipped this one
       try {
@@ -70,6 +73,7 @@ export async function processDueRecurring({ userId, log = console.log } = {}) {
           recurringTransactionId: rule._id,
         });
         created++;
+        createdMonths.add(toDayString(date).slice(0, 7));
       } catch (err) {
         // Unique index on (recurringTransactionId, date): already created
         if (err.code !== 11000) {
@@ -97,6 +101,15 @@ export async function processDueRecurring({ userId, log = console.log } = {}) {
       log(`[RECURRING] rule=${rule._id} ended (past endDate)`);
     }
     await rule.save();
+
+    // Recurring expenses can push a budget over too
+    if (rule.type === "expense" && createdMonths.size) {
+      const user = await User.findById(rule.userId);
+      for (const ym of createdMonths) {
+        const [y, m] = ym.split("-").map(Number);
+        await checkBudget(user, rule.category, y, m);
+      }
+    }
   }
   log(`[RECURRING] created ${created} transaction(s)`);
   return { rules: rules.length, created };

@@ -94,6 +94,26 @@ const userSchema = new Schema(
       ),
       default: () => ({}),
     },
+    // Which emails the user wants (all on by default)
+    notifications: {
+      type: new Schema(
+        {
+          budgetAlerts: { type: Boolean, default: true },
+          monthlySummary: { type: Boolean, default: true },
+          recurringReminders: { type: Boolean, default: true },
+        },
+        { _id: false }
+      ),
+      default: () => ({}),
+    },
+    // Budget alert emails already sent, "YYYY-MM:category" -> level, so
+    // each level is emailed once per category per month
+    budgetAlertsSent: {
+      type: Map,
+      of: String,
+      default: () => new Map(),
+      select: false,
+    },
     // "admin" can read the admin pages (stats, feedback). Granted only with
     // the make-admin script, never through the API.
     role: {
@@ -148,6 +168,7 @@ const userSchema = new Schema(
       transform: function (doc, ret) {
         delete ret.password;
         delete ret.passwordHistory;
+        delete ret.budgetAlertsSent;
         delete ret.passwordResetTokenHash;
         delete ret.passwordResetExpires;
         ret.photo = normalizePhoto(ret.photo);

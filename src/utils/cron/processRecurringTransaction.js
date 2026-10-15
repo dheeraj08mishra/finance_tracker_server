@@ -1,51 +1,35 @@
-import RecurringTransaction from "../../model/recurringTransaction.js";
 import cron from "node-cron";
-import { addDays } from "date-fns";
-import User from "../../model/user.js";
-import { sendRecurringTransactionEmail } from "../autoEmail/mailer.js";
 import { processDueRecurring } from "./recurringEngine.js";
+import {
+  sendTomorrowReminders,
+  sendMonthlySummaries,
+} from "../notifications.js";
 
-// Email users about recurring transactions due tomorrow (UTC day)
-async function sendTomorrowReminders() {
-  const tomorrowStart = addDays(new Date(), 1);
-  tomorrowStart.setUTCHours(0, 0, 0, 0);
-  const tomorrowEnd = new Date(tomorrowStart);
-  tomorrowEnd.setUTCHours(23, 59, 59, 999);
-
-  const reminders = await RecurringTransaction.find({
-    isActive: true,
-    nextOccurrence: { $gte: tomorrowStart, $lte: tomorrowEnd },
-  });
-  console.log(`[CRON] ${reminders.length} reminder(s) for tomorrow`);
-
-  for (const rt of reminders) {
-    const user = await User.findById(rt.userId);
-    if (!user?.email) continue;
-    try {
-      await sendRecurringTransactionEmail(
-        user.email,
-        {
-          amount: rt.amount,
-          category: rt.category,
-          note: rt.note,
-          date: rt.nextOccurrence,
-        },
-        true
-      );
-    } catch (err) {
-      console.error(`[CRON] Reminder failed for recurringTxn=${rt._id}:`, err);
-    }
-  }
-}
-
-// Daily at 00:00 UTC (05:30 IST)
+// Daily at 00:00 UTC (05:30 IST): reminders, then create due transactions
 cron.schedule("0 0 * * *", async () => {
-  console.log(`[CRON] Recurring job started at ${new Date().toISOString()}`);
+  console.log(`[CRON] Daily job started at ${new Date().toISOString()}`);
   try {
-    await sendTomorrowReminders();
+    const r = await sendTomorrowReminders();
+    console.log(`[CRON] ${r.sent} of ${r.due} reminder(s) sent`);
     await processDueRecurring();
   } catch (error) {
-    console.error("[CRON] Recurring job failed:", error);
+    console.error("[CRON] Daily job failed:", error);
+  }
+});
+
+// 1st of the month at 03:00 UTC (08:30 IST): last month's summaries
+cron.schedule("0 3 1 * *", async () => {
+  const now = new Date();
+  const year =
+    now.getUTCMonth() === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+  const month = now.getUTCMonth() === 0 ? 12 : now.getUTCMonth();
+  try {
+    const r = await sendMonthlySummaries(year, month);
+    console.log(
+      `[CRON] Monthly summaries: ${r.sent} sent, ${r.skipped} skipped`
+    );
+  } catch (error) {
+    console.error("[CRON] Monthly summaries failed:", error);
   }
 });
 

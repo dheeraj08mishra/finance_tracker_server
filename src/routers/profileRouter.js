@@ -154,4 +154,34 @@ profileRouter.patch("/user/password", userAuth, async (req, res) => {
   }
 });
 
+// Which emails to get: { budgetAlerts, monthlySummary, recurringReminders }
+profileRouter.patch("/user/notifications", userAuth, async (req, res) => {
+  try {
+    const KINDS = ["budgetAlerts", "monthlySummary", "recurringReminders"];
+    const body = req.body || {};
+    const keys = Object.keys(body);
+    if (
+      !keys.length ||
+      keys.some((k) => !KINDS.includes(k) || typeof body[k] !== "boolean")
+    ) {
+      return res.status(400).json({
+        message: `Send true/false for any of: ${KINDS.join(", ")}`,
+      });
+    }
+    const update = Object.fromEntries(
+      keys.map((k) => [`notifications.${k}`, body[k]])
+    );
+    const user = await User.findByIdAndUpdate(req.user._id, update, {
+      new: true,
+    });
+    res.json({
+      message: "Email settings saved",
+      notifications: user.notifications,
+    });
+  } catch (error) {
+    const message = publicError(error);
+    res.status(errorStatus(error)).json({ message, error: message });
+  }
+});
+
 export default profileRouter;
