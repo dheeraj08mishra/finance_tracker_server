@@ -11,7 +11,11 @@ import {
   requestToken,
 } from "../utils/sessions.js";
 import { clearAuthCookie } from "../utils/security.js";
+import { publicError, errorStatus } from "../utils/errors.js";
 import userAuth from "../middleware/auth.js";
+
+const PHONE_TAKEN =
+  "This mobile number is already registered to another account.";
 
 // Signup stores the normalized form (gmail dots removed); older records may be
 // plain-lowercased, so look up both.
@@ -78,6 +82,10 @@ authenticationRouter.post("/signup", async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
+    // Phone numbers are unique too (one account per number)
+    if (phoneNumber && (await User.exists({ phoneNumber }))) {
+      return res.status(400).json({ message: PHONE_TAKEN });
+    }
     // Create new user
     const newUser = new User({
       firstName,
@@ -108,6 +116,18 @@ authenticationRouter.post("/signup", async (req, res) => {
       },
     });
   } catch (error) {
+    // Two sign-ups at the same moment: the unique indexes catch what the
+    // checks above missed
+    if (error?.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
+      return res.status(400).json({
+        message: field === "phoneNumber" ? PHONE_TAKEN : "User already exists",
+      });
+    }
+    // e.g. a missing phone number: tell the user, not "internal error"
+    if (errorStatus(error) === 400) {
+      return res.status(400).json({ message: publicError(error) });
+    }
     console.error("Error during signup:", error);
     res.status(500).json({ message: "Internal server error" });
   }
