@@ -104,3 +104,43 @@ test("/me returns the user without password data", async () => {
     assert.ok(!(field in r.data.user), field);
   }
 });
+
+test("sign-up: a mobile number already in use gets a clear 400, not a 500", async () => {
+  const phoneNumber = "9" + String(Date.now()).slice(-9);
+  const body = (email) => ({
+    firstName: "Phone",
+    lastName: "Taken",
+    email,
+    password: "Testuser1@",
+    phoneNumber,
+  });
+  const first = await ctx
+    .client()
+    .post("/signup", body(`p1${Date.now()}@example.com`));
+  assert.equal(first.status, 201);
+  const second = await ctx
+    .client()
+    .post("/signup", body(`p2${Date.now()}@example.com`));
+  assert.equal(second.status, 400);
+  assert.match(second.data.message, /mobile number is already registered/);
+
+  // same moment, same number: one wins, the other gets the same clear 400
+  const race = "8" + String(Date.now()).slice(-9);
+  const results = await Promise.all(
+    [1, 2].map((n) =>
+      ctx.client().post("/signup", {
+        ...body(`race${n}${Date.now()}@example.com`),
+        phoneNumber: race,
+      })
+    )
+  );
+  assert.deepEqual(results.map((r) => r.status).sort(), [201, 400]);
+
+  // no phone at all: a clear 400 (it's required), not a 500
+  const noPhone = await ctx.client().post("/signup", {
+    ...body(`nophone${Date.now()}@example.com`),
+    phoneNumber: undefined,
+  });
+  assert.equal(noPhone.status, 400);
+  assert.match(noPhone.data.message, /Phone number is required/);
+});
